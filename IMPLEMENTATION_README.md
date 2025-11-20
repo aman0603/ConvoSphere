@@ -69,39 +69,45 @@ Based on section 13 of the architecture document.
     *   [x] Created `api/` directory and `api/main.py` with a basic FastAPI app.
     *   [x] Created `db/` directory and `db/database.py` for MongoDB and Redis connection logic.
     *   [x] Updated `.env.example` with MongoDB and Redis connection string placeholders.
-    *   [ ] Add DB migrations / schema for `sessions`, `messages`, `alerts`, `osint`, `local_llm`, `gemini`.
-    *   [ ] Implement `POST /api/sessions`, `GET /api/sessions/{id}`, `POST /api/sessions/{id}/send`, `POST /api/sessions/{id}/messages`.
-    *   [ ] Add a simple auth stub for `owner_id`.
+    *   [x] Created `api/schemas.py` for Pydantic models.
+    *   [x] Created `db/models.py` for database interaction functions.
+    *   [x] Add DB migrations / schema for `sessions`, `messages`, `alerts`, `osint`, `local_llm`, `gemini`. (Implemented via Pydantic schemas and MongoDB)
+    *   [x] Implement `POST /api/sessions`.
+    *   [x] Implement `GET /api/sessions/{id}`.
+    *   [x] Implement `POST /api/sessions/{id}/send`.
+    *   [x] Implement `POST /api/sessions/{id}/messages`.
+    *   [x] Add a simple auth stub for `owner_id`. (Implicitly handled by requiring `owner_id` in `CreateSessionRequest` for now)
 
-2.  **[Pending]** **Background worker + job definitions**
-    *   [ ] Add Celery/RQ and Redis (or FastAPI background-tasks).
-    *   [ ] Implement `osint_enrichment(session_id)` and placeholder return values.
+2.  **[In Progress]** **Background worker + job definitions**
+    *   [x] Add Celery/RQ and Redis (or FastAPI background-tasks). (Using FastAPI BackgroundTasks for now)
+    *   [x] Implement `osint_enrichment(session_id)` and placeholder return values.
 
-3.  **[Pending]** **Local LLM service wrapper**
-    *   [ ] Implement `local_llm_service.py` with `analyze()` and `suggest_first_message()`.
+3.  **[In Progress]** **Local LLM service wrapper**
+    *   [x] Implement `services/local_llm_service.py` with placeholder `analyze()` and `suggest_first_message()` methods.
     *   [ ] Hook `local_llm_init` and `local_llm_analyze` worker tasks.
 
-4.  **[Pending]** **Telegram router**
-    *   [ ] Refactor `telegram_talker.py` to be session-aware.
-    *   [ ] Implement `send_message` and webhook receiver.
+4.  **[Completed]** **Telegram router**
+    *   [x] Refactor `telegram_talker.py` to be session-aware (Implemented as `services/telegram_router.py`).
+    *   [x] Implement `send_message`.
+    *   [x] Implement webhook receiver.
 
-5.  **[Pending]** **Streamlit UI**
-    *   [ ] Add "Start Conversation" form.
-    *   [ ] Wire form to `POST /api/sessions` and show session page.
+5.  **[In Progress]** **Streamlit UI**
+    *   [x] Add "Start Conversation" form.
+    *   [x] Wire to `POST /api/sessions` and show session page.
 
-6.  **[Pending]** **Gemini client**
-    *   [ ] Implement `gemini_client.py` structured JSON call.
-    *   [ ] Implement `gemini_call` worker that stores result.
+6.  **[In Progress]** **Gemini client**
+    *   [x] Implement `gemini_client.py` structured JSON call (via `GeminiClient` and `run_gemini_call`).
+    *   [x] Implement `gemini_call` worker that stores result.
 
-7.  **[Pending]** **Alerting**
-    *   [ ] Implement triggers in `local_llm_analyze`.
-    *   [ ] Implement `alert_dispatcher`.
+7.  **[In Progress]** **Alerting**
+    *   [x] Implement triggers in `local_llm_analyze`.
+    *   [x] Implement `alert_dispatcher`.
 
-8.  **[Pending]** **Testing**
-    *   [ ] Add tests for endpoints and workers (using mocks for external APIs).
+8.  **[In Progress]** **Testing**
+    *   [x] Add tests for endpoints and workers (using mocks for external APIs).
 
-9.  **[Pending]** **Documentation**
-    *   [ ] Update README with new endpoints and dev run steps.
+9.  **[In Progress]** **Documentation**
+    *   [x] Update README with new endpoints and dev run steps.
 
 ## Usage
 
@@ -113,7 +119,17 @@ To run the FastAPI application:
     ```bash
     uvicorn api.main:app --reload
     ```
-    This will start the FastAPI server, typically at `http://127.0.0.1:8000`. You can then access the interactive API documentation at `http://127.0.0.1:8000/docs`.
+    This will start the FastAPI server, typically at `http://127.00.1:8000`. You can then access the interactive API documentation at `http://127.0.0.1:8000/docs`.
+
+To run the Streamlit application:
+
+1.  Ensure the FastAPI application is running.
+2.  Activate your virtual environment.
+3.  Navigate to the project root and run:
+    ```bash
+    streamlit run ui/streamlit_app.py
+    ```
+    This will open the Streamlit app in your web browser.
 
 ## Core Functionality Acceptance Criteria
 

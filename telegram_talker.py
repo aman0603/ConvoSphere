@@ -14,7 +14,7 @@ async def main():
     print("=== Telegram user client (terminal) ===")
     api_id = os.getenv("API_ID")
     api_hash = os.getenv("API_HASH")
-    phone = "ENTER PHONE NUMBER"
+    phone = "+918085234483"
 
     # Create client
     client = TelegramClient(SESSION_NAME, api_id=int(api_id), api_hash=api_hash)
