@@ -13,6 +13,6 @@ class ConnectionManager:
         if session_id in self.active_connections:
             del self.active_connections[session_id]
 
-    async def send_session_update(self, session_id: str, session_data: str): # session_data is a JSON string
+    async def send_session_update(self, session_id: str, session_data: dict): # session_data is a dict
         if session_id in self.active_connections:
-            await self.active_connections[session_id].send_text(session_data)
+            await self.active_connections[session_id].send_json(session_data)
