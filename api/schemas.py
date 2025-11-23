@@ -31,15 +31,11 @@ class Message(BaseModel):
 
 class LocalLLMAnalysis(BaseModel):
     last_analysis_at: Optional[datetime] = None
-    short_context: Optional[str] = None # Or List[str] if it's a list of messages
-    long_summary: Optional[str] = None
-    sentiment: Optional[str] = None
-    emotion: Optional[str] = None
-    buying_intent_score: Optional[int] = None
-    intent_shift: Optional[bool] = None
-    intent_shift_at: Optional[datetime] = None
-    risks: Optional[List[str]] = None
-    opportunities: Optional[List[str]] = None
+    global_summary: Optional[str] = None
+    latest_interaction_summary: Optional[str] = None
+    current_sentiment: Optional[str] = None
+    conversation_state_tag: Optional[str] = None
+    error: Optional[str] = None
 
 class GeminiAnalysis(BaseModel):
     last_call_at: Optional[datetime] = None
@@ -72,3 +68,12 @@ class CreateSessionRequest(BaseModel):
     context: str
     goal: str
     owner_id: str
+
+class NewMessageRequest(BaseModel):
+    sender: str
+    text: str
+    channel: str
+
+class SendMessageRequest(BaseModel):
+    text: str
+

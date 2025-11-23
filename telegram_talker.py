@@ -7,6 +7,7 @@ import getpass
 import sys
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 load_dotenv()
 # ---- Configurable: Session filename base ----
 SESSION_NAME = "tg_user_session"   # will create tg_user_session.session
@@ -14,10 +15,11 @@ async def main():
     print("=== Telegram user client (terminal) ===")
     api_id = os.getenv("API_ID")
     api_hash = os.getenv("API_HASH")
-    phone = "+918085234483"
+    phone = os.getenv("TELEGRAM_OWN_PHONE")
 
     # Create client
-    client = TelegramClient(SESSION_NAME, api_id=int(api_id), api_hash=api_hash)
+    session_file = Path(__file__).parent / SESSION_NAME
+    client = TelegramClient(str(session_file), api_id=int(api_id), api_hash=api_hash)
     await client.connect()
 
     if not await client.is_user_authorized():
@@ -39,7 +41,11 @@ async def main():
     print("Signed in as", (await client.get_me()).username or (await client.get_me()).first_name)
 
     # Ask for contact identifier
-    contact_q = "@mr_shanx"
+    contact_q = os.getenv("TELEGRAM_TEST_PHONE")
+    if not contact_q:
+        print("Error: TELEGRAM_TEST_PHONE is not set in your .env file.")
+        await client.disconnect()
+        return
 
     # Resolve contact entity
     target = None

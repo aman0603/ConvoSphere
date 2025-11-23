@@ -47,7 +47,12 @@ def main():
 
     organic = data.get("organic_results")
     out = {"organic_results": organic if organic is not None else []}
-    print(json.dumps(out, indent=2, ensure_ascii=False))
+    # Log output to a file to verify content before printing
+    with open("serpapi_output.json", "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, ensure_ascii=False)
+    # Encode the output to UTF-8 before printing to avoid console errors
+    output_json = json.dumps(out, indent=2, ensure_ascii=False)
+    sys.stdout.buffer.write(output_json.encode('utf-8'))
 
 
 if __name__ == "__main__":

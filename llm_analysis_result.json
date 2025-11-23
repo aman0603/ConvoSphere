@@ -1,0 +1,13 @@
+{
+  "global_summary": "Deepti expresses interest in a demo but requests information instead, showing skepticism about the claimed benefits.",
+  "latest_interaction_summary": {
+    "message_id": "67476406-32d5-4048-909f-0a145c42c337",
+    "timestamp": "2025-11-21T15:02:08.580000",
+    "sender": "customer",
+    "channel": "telegram",
+    "text": "80% is a bold claim. What kind of data throughput can you handle, and do you support custom Python models?"
+  },
+  "current_sentiment": "Skeptical",
+  "conversation_state_tag": "Objection_Handling",
+  "last_analysis_at": "2025-11-21T15:04:06.470054"
+}

@@ -3,6 +3,7 @@ import asyncio
 from telethon import TelegramClient
 from telethon.tl.functions.contacts import SearchRequest
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
 
@@ -12,9 +13,10 @@ class TelegramRouter:
     Webhook receiver logic will be handled as a separate FastAPI endpoint.
     """
     def __init__(self):
-        self.api_id = os.getenv("TELEGRAM_API_ID")
-        self.api_hash = os.getenv("TELEGRAM_API_HASH")
+        self.api_id = os.getenv("API_ID")
+        self.api_hash = os.getenv("API_HASH")
         self.client = None
+        self.session_file = str(Path(__file__).parent.parent / 'tg_user_session')
 
         if not self.api_id or not self.api_hash:
             print("WARNING: TELEGRAM_API_ID or TELEGRAM_API_HASH not set. Telegram functionality will be mocked.")
@@ -22,24 +24,27 @@ class TelegramRouter:
         else:
             self.api_id = int(self.api_id)
             self.mock_mode = False
-            self.client = TelegramClient('tg_session', self.api_id, self.api_hash)
-            # You might want to connect/authenticate lazily or on app startup
 
     async def connect(self):
-        if not self.mock_mode and not self.client.is_connected():
+        if self.mock_mode:
+            return
+        if self.client is None:
+            self.client = TelegramClient(self.session_file, self.api_id, self.api_hash)
+        
+        if not self.client.is_connected():
             await self.client.connect()
             if not await self.client.is_user_authorized():
-                # This would typically be handled interactively or through pre-auth
                 print("Telegram client not authorized. Manual authentication might be needed.")
                 print("Please run `python telegram_talker.py` once to authenticate if needed.")
-                # raise Exception("Telegram client not authorized. Run telegram_talker.py manually to auth.")
 
     async def send_message(self, phone_number: str, message_text: str):
         if self.mock_mode:
             print(f"[MOCK TELEGRAM] Sending message to {phone_number}: {message_text}")
             return {"status": "mock_sent", "phone": phone_number, "message": message_text}
         
-        await self.connect() # Ensure client is connected
+        if not self.client or not self.client.is_connected():
+            # This should not happen if the startup event is working correctly
+            await self.connect()
 
         try:
             # Resolve the contact by phone number

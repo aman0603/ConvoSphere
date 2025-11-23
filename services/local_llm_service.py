@@ -4,54 +4,85 @@ import asyncio
 from typing import Dict, Any, List
 from datetime import datetime
 
-# Placeholder for a proper generative model client (e.g., Ollama)
-# For now, we'll use a mock client.
-class MockGenerativeModel:
+import ollama
+
+class OllamaGenerativeModel:
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self.client = ollama.AsyncClient(host='http://localhost:11434')
+
     async def generate(self, prompt: str) -> str:
-        # Simulate an async call
-        await asyncio.sleep(0.1) 
-        if "analyze" in prompt:
-            return "This is a mock analysis of the conversation, noting a potential intent shift."
-        elif "suggest" in prompt:
-            return "This is a mock first message suggestion: 'Hi {name}, I noticed you're interested in {context}.'"
-        return "Mock response."
+        response = await self.client.chat(model=self.model_name, messages=[{'role': 'user', 'content': prompt}])
+        return response['message']['content']
 
-# In a real implementation, you would use something like:
-# from ollama import Client
-# ollama_client = Client(host='http://localhost:11434')
-
-# For now, we use the mock
-llm_model_client = MockGenerativeModel()
+llm_model_client = OllamaGenerativeModel(model_name="phi3:3.8b")
 
 
 class LocalLLMService:
     async def analyze(self, session_payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyzes the current session context and returns insights.
-        This is a placeholder implementation.
+        Analyzes the current session context and returns a tactical analysis.
         """
+        # Extract data from the payload
         short_context = session_payload.get("short_context", [])
         customer_name = session_payload.get("customer", {}).get("name", "there")
-        prompt = f"Analyze the following conversation for {customer_name} and provide a summary, sentiment, and buying intent score.\n\nConversation:\n{json.dumps(short_context, indent=2)}\n\nTask: analyze_and_summarize"
+        goal = session_payload.get("goal", "achieve a positive outcome")
         
-        analysis_text = await llm_model_client.generate(prompt)
+        # Construct a detailed prompt for the tactical analysis
+        prompt = f"""
+You are a Tactical Analyst for a sales conversation. Your task is to analyze the provided conversation context and output a structured JSON object.
 
-        # Simulate some dynamic values for alerts
-        buying_intent_score = 60 + len(short_context) * 2 # Score increases with messages
-        intent_shift = (buying_intent_score > 70) # Simulate a shift
+**Conversation Details:**
+- Customer Name: {customer_name}
+- Sales Goal: {goal}
+- Recent Conversation History (short_context):
+{json.dumps(short_context, indent=2)}
+
+**Your Task:**
+Based on the conversation history, provide the following analysis in a single JSON object. Do not include any text or formatting outside of the JSON object.
+
+1.  **global_summary**: A concise, one-sentence summary of the entire conversation so far.
+2.  **latest_interaction_summary**: A summary of the very last message or exchange.
+3.  **current_sentiment**: Classify the customer's current sentiment. Choose one from: "Positive", "Neutral", "Skeptical", "Negative", "Curious".
+4.  **conversation_state_tag**: Categorize the current state of the conversation. Choose one from: "Rapport_Building", "Needs_Discovery", "Solution_Pitching", "Price_Negotiation", "Objection_Handling", "Closing", "Stalled".
+
+**Output Format (JSON only):**
+{{
+  "global_summary": "<Your one-sentence summary>",
+  "latest_interaction_summary": "<Your summary of the last interaction>",
+  "current_sentiment": "<Your sentiment analysis>",
+  "conversation_state_tag": "<Your conversation state tag>"
+}}
+"""
         
-        return {
-            "last_analysis_at": datetime.utcnow().isoformat(),
-            "short_context": json.dumps(short_context), # Store as string for simplicity
-            "long_summary": analysis_text,
-            "sentiment": "neutral-positive",
-            "emotion": "curious",
-            "buying_intent_score": min(95, buying_intent_score), # Cap score
-            "intent_shift": intent_shift,
-            "intent_shift_at": datetime.utcnow().isoformat() if intent_shift else None,
-            "risks": ["price concern"] if buying_intent_score > 80 else [],
-            "opportunities": ["trial module"]
-        }
+        try:
+            raw_llm_output = await llm_model_client.generate(prompt)
+            
+            # Clean the output to extract only the JSON
+            # LLMs sometimes add markdown formatting (```json ... ```) or other text
+            if "```json" in raw_llm_output:
+                json_part = raw_llm_output.split("```json")[1].split("```")[0]
+            else:
+                json_part = raw_llm_output
+            
+            # Parse the JSON and return it
+            analysis_json = json.loads(json_part)
+            analysis_json["last_analysis_at"] = datetime.utcnow()
+            return analysis_json
+
+        except json.JSONDecodeError as e:
+            print(f"--- Local LLM analysis failed: Could not decode JSON from LLM response. Error: {e} ---")
+            return {
+                "last_analysis_at": datetime.utcnow(),
+                "error": f"JSONDecodeError: {e}. Raw output: {raw_llm_output}"
+            }
+        except Exception as e:
+            print(f"--- Local LLM analysis failed with an unexpected error: {e} ---")
+            return {
+                "last_analysis_at": datetime.utcnow(),
+                "error": str(e)
+            }
+
 
     async def suggest_first_message(self, session_payload: Dict[str, Any]) -> str:
         """
