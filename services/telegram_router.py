@@ -1,5 +1,6 @@
 import os
 import asyncio
+import httpx
 from telethon import TelegramClient, events
 from telethon.tl.functions.contacts import SearchRequest
 from dotenv import load_dotenv
@@ -36,40 +37,36 @@ class TelegramRouter:
         if not event.is_private: # Ignore messages from groups/channels
             return
             
-        if self.db is None or self.manager is None:
-            print("--- ERROR: Database or ConnectionManager not configured for TelegramRouter. Cannot process incoming message. ---")
-            return
-
         print(f"--- Received new inbound message from: {event.sender_id} ---")
         
         try:
             sender = await event.get_sender()
             if hasattr(sender, 'phone') and sender.phone:
                 phone_number = f"+{sender.phone}"
+                
+                # Find session by phone number - this is a fallback and may not work for all users
                 sessions_collection = self.db["sessions"]
                 session_doc = await sessions_collection.find_one({"customer.phone": phone_number})
-                
+
                 if session_doc:
                     session_id = session_doc["_id"]
-                    new_message = Message(
-                        session_id=session_id,
-                        sender="customer",
-                        text=event.raw_text,
-                        channel="telegram",
-                        timestamp=datetime.utcnow()
-                    )
-                    await sessions_collection.update_one(
-                        {"_id": session_id},
-                        {"$push": {"messages": new_message.dict(exclude_none=True)}, "$set": {"updated_at": datetime.utcnow()}}
-                    )
-                    print(f"--- Message from {phone_number} added to session {session_id} ---")
-
-                    # Broadcast the update to the frontend
-                    updated_session_doc = await sessions_collection.find_one({"_id": session_id})
-                    if updated_session_doc:
-                        session_to_broadcast = Session.model_validate(updated_session_doc)
-                        await self.manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
-
+                    
+                    # Make an API call to the add_message_to_session endpoint
+                    api_url = f"http://localhost:8000/api/sessions/{session_id}/messages"
+                    payload = {
+                        "sender": "customer",
+                        "text": event.raw_text,
+                        "channel": "telegram"
+                    }
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            response = await client.post(api_url, json=payload)
+                            response.raise_for_status()
+                        print(f"--- Relayed inbound message to API for session {session_id} ---")
+                    except httpx.HTTPStatusError as e:
+                        print(f"--- Failed to relay inbound message to API (HTTP Status): {e.response.status_code} ---")
+                    except httpx.RequestError as e:
+                        print(f"--- Failed to relay inbound message to API (Request Error): {e} ---")
                 else:
                     print(f"--- No session found for phone number: {phone_number} ---")
             else:
@@ -77,8 +74,6 @@ class TelegramRouter:
 
         except Exception as e:
             print(f"--- Error in message handler: {e} ---")
-
-
 
     async def connect(self):
         if self.mock_mode:

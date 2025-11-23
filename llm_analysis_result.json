@@ -1,13 +1,7 @@
 {
-  "global_summary": "Deepti expresses interest in a demo but requests information instead, showing skepticism about the claimed benefits.",
-  "latest_interaction_summary": {
-    "message_id": "67476406-32d5-4048-909f-0a145c42c337",
-    "timestamp": "2025-11-21T15:02:08.580000",
-    "sender": "customer",
-    "channel": "telegram",
-    "text": "80% is a bold claim. What kind of data throughput can you handle, and do you support custom Python models?"
-  },
-  "current_sentiment": "Skeptical",
-  "conversation_state_tag": "Objection_Handling",
-  "last_analysis_at": "2025-11-21T15:04:06.470054"
+  "global_summary": "Deepti Singh is interested in the sales agent's platform for data processing and has requested a quick summary instead of scheduling a call.",
+  "latest_interaction_summary": "Customer Deepti responded to the pitch by requesting just a brief summary due to time constraints, without committing to further conversation or booking a call.",
+  "current_sentiment": "Neutral",
+  "conversation_state_tag": "Stalled",
+  "last_analysis_at": "2025-11-23T10:38:33.511612"
 }

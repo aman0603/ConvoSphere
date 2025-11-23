@@ -75,6 +75,7 @@ async def run_osint_enrichment(session_id: str, db: AsyncIOMotorDatabase):
 
 # Local LLM Analyze Worker
 async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, background_tasks: BackgroundTasks):
+    print("--- Starting Local LLM analysis... ---")
     sessions_collection = db["sessions"]
     print(f"--- Starting Local LLM analysis for session: {session_id} ---")
 
@@ -83,7 +84,7 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
         print(f"Local LLM analysis failed: Session {session_id} not found.")
         return
 
-    session = Session(**session_doc)
+    session = Session.model_validate(session_doc)
     
     # Prepare payload for Local LLM Service
     llm_payload = {
@@ -150,6 +151,8 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
         if updated_session_doc:
             session_to_broadcast = Session.model_validate(updated_session_doc)
             await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+
+    print("--- Finished Local LLM analysis. ---")
 
 
 # Gemini call worker
