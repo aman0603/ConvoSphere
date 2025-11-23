@@ -149,7 +149,7 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
         updated_session_doc = await sessions_collection.find_one({"_id": session_id})
         if updated_session_doc:
             session_to_broadcast = Session.model_validate(updated_session_doc)
-            await manager.send_session_update(session_id, session_to_broadcast.model_dump())
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
 
 
 # Gemini call worker
@@ -339,7 +339,7 @@ async def add_message_to_session(
             background_tasks.add_task(run_local_llm_analyze, updated_session.session_id, db, background_tasks)
             
             # Broadcast the updated session to the client
-            await manager.send_session_update(session_id, updated_session.model_dump())
+            await manager.send_session_update(session_id, updated_session.model_dump(mode='json'))
 
             return updated_session
         else:
@@ -398,7 +398,7 @@ async def send_outbound_message(
         if updated_session_doc:
             session_to_broadcast = Session.model_validate(updated_session_doc)
             # Broadcast the updated session to the client
-            await manager.send_session_update(session_id, session_to_broadcast.model_dump())
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
             return session_to_broadcast
         else:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve updated session")
