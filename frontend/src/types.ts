@@ -1,25 +1,72 @@
-export interface ChatMetadata {
-  client_phone?: string;
-  client_name?: string;
-  client_details?: string;
-  start_timestamp?: string;
-  [key: string]: unknown;
+export interface Customer {
+  name: string;
+  phone: string;
+  context: string;
+  goal: string;
 }
 
-export interface ChatSummary {
-  id: string;
-  metadata: ChatMetadata;
+export interface OSINT {
+  numverify?: Record<string, any>;
+  linkedin?: Record<string, any>;
+  github?: Record<string, any>;
+  serp?: Record<string, any>[];
+  firecrawl?: Record<string, any>;
+  confidence?: number;
 }
 
-export interface Chat {
-  metadata: ChatMetadata;
-  generated: string[];
-  past: string[];
-  messages: any[];
-}
-
-export interface TelegramMessage {
-  sender: string;
+export interface Message {
+  message_id: string;
+  session_id: string;
+  timestamp: string; // ISO8601 string
+  sender: 'agent' | 'customer' | 'system';
+  channel: 'telegram' | 'streamlit';
   text: string;
-  timestamp: number;
+}
+
+export interface LocalLLMAnalysis {
+  last_analysis_at?: string; // ISO8601 string
+  global_summary?: string;
+  latest_interaction_summary?: string;
+  current_sentiment?: 'Positive' | 'Neutral' | 'Skeptical' | 'Negative' | 'Curious';
+  conversation_state_tag?: 'Rapport_Building' | 'Needs_Discovery' | 'Solution_Pitching' | 'Price_Negotiation' | 'Objection_Handling' | 'Closing' | 'Stalled';
+  error?: string;
+}
+
+export interface GeminiAnalysis {
+  last_call_at?: string; // ISO8601 string
+  payload_sent?: Record<string, any>;
+  response?: Record<string, any>;
+}
+
+export interface Alert {
+  alert_id: string;
+  type: 'high_intent' | 'risk' | 'info';
+  created_at: string; // ISO8601 string
+  message: string;
+}
+
+export interface Session {
+  session_id: string;
+  created_at: string; // ISO8601 string
+  updated_at: string; // ISO8601 string
+  owner: string;
+  customer: Customer;
+  osint: OSINT;
+  messages: Message[];
+  local_llm: LocalLLMAnalysis;
+  gemini: GeminiAnalysis;
+  alerts: Alert[];
+  status: 'initialized' | 'active' | 'closed';
+}
+
+export interface CreateSessionRequest {
+  name: string;
+  phone: string;
+  context: string;
+  goal: string;
+  owner_id: string;
+}
+
+export interface SendMessageRequest {
+  text: string;
 }

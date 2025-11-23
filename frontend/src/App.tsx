@@ -1,50 +1,111 @@
 import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import TelegramChatPane from './components/TelegramChatPane';
-import GeminiChatPane from './components/GeminiChatPane';
-import type { Chat, ChatSummary } from './types';
-import { createChat, getChat, listChats } from './api';
+import GeminiChatPane from './components/GeminiChatPane'; // Reverted import
+import type { Session, CreateSessionRequest } from './types';
+import { createSession, getSession, listSessions } from './api';
+
+const POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds
 
 const App: React.FC = () => {
-  const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [activeChat, setActiveChat] = useState<Chat | null>(null);
-  const [loadingChat, setLoadingChat] = useState(false);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [loadingSession, setLoadingSession] = useState(false);
 
+  // Initial load of sessions
   useEffect(() => {
-    listChats()
-      .then(setChats)
-      .catch(() => {
-        // ignore initial load errors
+    listSessions()
+      .then(setSessions)
+      .catch((err) => {
+        console.error("Failed to load sessions:", err);
+        // ignore initial load errors, e.g., if no sessions exist
       });
   }, []);
 
+  // Effect to handle WebSocket connection for real-time updates
   useEffect(() => {
-    if (!activeChatId) return;
-    setLoadingChat(true);
-    getChat(activeChatId)
-      .then((res) => setActiveChat(res.chat))
-      .finally(() => setLoadingChat(false));
-  }, [activeChatId]);
+    if (!activeSessionId) {
+      return;
+    }
 
-  async function handleCreateChat(data: { client_phone: string; client_name: string; client_details: string }) {
-    const res = await createChat(data);
-    setChats((prev) => [...prev, { id: res.id, metadata: res.chat.metadata }]);
-    setActiveChatId(res.id);
-    setActiveChat(res.chat);
+    // Still fetch the session once initially when selected
+    const fetchInitialSession = async () => {
+      setLoadingSession(true);
+      try {
+        const res = await getSession(activeSessionId);
+        setActiveSession(res);
+      } catch (error) {
+        console.error('Failed to fetch initial session:', error);
+        setActiveSession(null);
+      } finally {
+        setLoadingSession(false);
+      }
+    };
+    fetchInitialSession();
+
+    const wsUrl = `ws://localhost:8000/ws/${activeSessionId}`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log(`WebSocket connected for session: ${activeSessionId}`);
+    };
+
+    ws.onmessage = (event) => {
+      console.log("WebSocket message received:", event.data);
+      try {
+        const updatedSession = JSON.parse(event.data);
+        setActiveSession(updatedSession);
+        console.log("Called setActiveSession with:", updatedSession);
+      } catch (error) {
+        console.error("Failed to parse WebSocket message:", error);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log(`WebSocket disconnected for session: ${activeSessionId}`);
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    // Cleanup WebSocket on unmount or when activeSessionId changes
+    return () => {
+      ws.close();
+    };
+  }, [activeSessionId]);
+
+  // New useEffect to log when activeSession state actually changes
+  useEffect(() => {
+    console.log("activeSession state has been updated:", activeSession);
+  }, [activeSession]);
+
+  async function handleCreateSession(data: CreateSessionRequest) {
+    const res = await createSession(data);
+    // Add new session to the list if not already there
+    setSessions((prev) => {
+      if (!prev.some(s => s.session_id === res.session_id)) {
+        return [...prev, res];
+      }
+      return prev;
+    });
+    setActiveSessionId(res.session_id);
+    setActiveSession(res);
   }
 
-  function handleSelectChat(id: string) {
-    setActiveChatId(id);
+  function handleSelectSession(id: string) {
+    setActiveSessionId(id);
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#020617', color: '#e5e7eb' }}>
+      {console.log("Sessions passed to Sidebar:", sessions)} {/* Debug log */}
       <Sidebar
-        chats={chats}
-        activeChatId={activeChatId}
-        onSelectChat={handleSelectChat}
-        onCreateChat={handleCreateChat}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onCreateSession={handleCreateSession}
       />
       <div
         style={{
@@ -64,7 +125,7 @@ const App: React.FC = () => {
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <TelegramChatPane chatId={activeChatId} />
+            <TelegramChatPane sessionId={activeSessionId} session={activeSession} />
           </div>
           <div
             style={{
@@ -87,15 +148,13 @@ const App: React.FC = () => {
                 background: '#020617',
               }}
             >
-              ASSIST
+              LLM INSIGHTS
             </div>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            {loadingChat && <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Loading chat...</div>}
-            <GeminiChatPane
-              chatId={activeChatId}
-              chat={activeChat}
-              onChatUpdated={setActiveChat}
+            {loadingSession && <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Loading session...</div>}
+            <GeminiChatPane // Reverted component name
+              session={activeSession}
             />
           </div>
         </div>

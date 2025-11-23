@@ -1,11 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from datetime import datetime
-from api.schemas import CreateSessionRequest, Session, Message, OSINT, LocalLLMAnalysis, GeminiAnalysis, Alert, NewMessageRequest, SendMessageRequest
+from schemas import CreateSessionRequest, Session, Message, OSINT, LocalLLMAnalysis, GeminiAnalysis, Alert, NewMessageRequest, SendMessageRequest
 from db.database import get_mongo_client, get_redis_client, get_sessions_collection, connect_to_mongo, close_mongo_connection
-from motor.motor_asyncio import AsyncIOMotorClient
 from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorCollection
 import pymongo
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import asyncio
 import json # For json.dumps
 
@@ -13,6 +12,9 @@ import json # For json.dumps
 from services.telegram_router import TelegramRouter
 from gemini_client import GeminiClient # Still using the old gemini_client.py
 from services.local_llm_service import get_llm_service, LocalLLMService
+from services.connection_manager import ConnectionManager # Import ConnectionManager
+
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="ConvoSphere API",
@@ -20,8 +22,18 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Allow the React frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+manager = ConnectionManager() # Instantiate ConnectionManager here
+
 # Initialize services globally
-telegram_router = TelegramRouter()
+telegram_router: Optional[TelegramRouter] = None # Will be initialized on startup
 gemini_client_instance = GeminiClient() # Rename to avoid conflict if gemini_client.py becomes a service
 local_llm_service = get_llm_service() # Get instance of LocalLLMService
 
@@ -122,12 +134,22 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
         )
         print(f"--- Local LLM analysis completed and session updated for {session_id} ---")
 
+        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
+        if updated_session_doc:
+            session_to_broadcast = Session.model_validate(updated_session_doc)
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+
     except Exception as e:
         print(f"--- Local LLM analysis failed for session {session_id}: {e} ---")
         await sessions_collection.update_one(
             {"_id": session_id},
             {"$set": {"local_llm.error": str(e), "updated_at": datetime.utcnow()}}
         )
+        # Also broadcast the error update
+        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
+        if updated_session_doc:
+            session_to_broadcast = Session.model_validate(updated_session_doc)
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
 
 
 # Gemini call worker
@@ -194,7 +216,10 @@ async def run_gemini_call(session_id: str, task: str, db: AsyncIOMotorDatabase):
 
 @app.on_event("startup")
 async def startup_event():
+    global telegram_router
     await connect_to_mongo()
+    db = await get_mongo_client()
+    telegram_router = TelegramRouter(db=db, manager=manager)
     await telegram_router.connect()
 
 @app.on_event("shutdown")
@@ -203,13 +228,23 @@ async def shutdown_event():
     await telegram_router.disconnect()
 
 
-# --- API Endpoints ---
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    await manager.connect(session_id, websocket)
+    try:
+        while True:
+            # Keep the connection alive
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(session_id)
+        print(f"--- WebSocket disconnected for session: {session_id} ---")
 
+# --- API Endpoints ---
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to ConvoSphere API", "timestamp": datetime.utcnow().isoformat()}
 
-@app.post("/api/sessions", response_model=Session, status_code=status.HTTP_201_CREATED)
+@app.post("/api/sessions", response_model=Session, status_code=status.HTTP_201_CREATED, response_model_by_alias=False)
 async def create_session(
     request: CreateSessionRequest,
     background_tasks: BackgroundTasks,
@@ -217,37 +252,38 @@ async def create_session(
     sessions_collection: AsyncIOMotorCollection = Depends(get_sessions_collection)
 ):
     session_data = {
-        "customer": request.dict(), # Use request.dict() for initial customer data
+        "customer": request.dict(),
         "owner": request.owner_id,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
-        "osint": OSINT().dict(), # Initialize with default empty OSINT
-        "local_llm": LocalLLMAnalysis().dict(), # Initialize with default empty LocalLLMAnalysis
-        "gemini": GeminiAnalysis().dict(), # Initialize with default empty GeminiAnalysis
+        "osint": {},
+        "local_llm": {},
+        "gemini": {},
         "messages": [],
         "alerts": [],
         "status": "initialized"
     }
     
-    # Create a Session object to leverage Pydantic's default_factory for session_id
     new_session_obj = Session(**session_data)
     
-    # Convert to dictionary, ensuring _id is correctly set from session_id
-    session_to_insert = new_session_obj.dict(by_alias=True, exclude_none=True) # exclude_none to not store None values
-    session_to_insert["_id"] = new_session_obj.session_id # Ensure _id is set for MongoDB
-    
     try:
-        result = await sessions_collection.insert_one(session_to_insert)
+        await sessions_collection.insert_one(new_session_obj.model_dump(by_alias=True))
         
-        # Fetch the created session to ensure it matches the response model
-        created_session = await sessions_collection.find_one({"_id": result.inserted_id})
-        if created_session:
-            # Enqueue OSINT enrichment as a background task
-            background_tasks.add_task(run_osint_enrichment, new_session_obj.session_id, db)
-            return Session(**created_session)
-        else:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve created session")
+        background_tasks.add_task(run_osint_enrichment, new_session_obj.session_id, db)
+        
+        return new_session_obj
             
+    except pymongo.errors.PyMongoError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
+
+@app.get("/api/sessions", response_model=List[Session], response_model_by_alias=False)
+async def list_sessions(
+    sessions_collection: AsyncIOMotorCollection = Depends(get_sessions_collection)
+):
+    try:
+        sessions_cursor = sessions_collection.find({})
+        sessions = await sessions_cursor.to_list(length=100)
+        return sessions
     except pymongo.errors.PyMongoError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
 
@@ -301,6 +337,10 @@ async def add_message_to_session(
             updated_session = Session(**updated_session_doc)
             # Enqueue Local LLM analysis as a background task
             background_tasks.add_task(run_local_llm_analyze, updated_session.session_id, db, background_tasks)
+            
+            # Broadcast the updated session to the client
+            await manager.send_session_update(session_id, updated_session.model_dump(mode='json'))
+
             return updated_session
         else:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve updated session")
@@ -354,9 +394,12 @@ async def send_outbound_message(
         if update_result.matched_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session with ID {session_id} not found")
         
-        updated_session = await sessions_collection.find_one({"_id": session_id})
-        if updated_session:
-            return Session(**updated_session)
+        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
+        if updated_session_doc:
+            session_to_broadcast = Session.model_validate(updated_session_doc)
+            # Broadcast the updated session to the client
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+            return session_to_broadcast
         else:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve updated session")
             

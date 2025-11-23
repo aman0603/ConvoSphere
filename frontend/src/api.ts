@@ -1,4 +1,4 @@
-import type { ChatSummary, Chat, TelegramMessage } from './types';
+import type { Session, Message, CreateSessionRequest, SendMessageRequest } from './types'; // Assuming these types are defined or will be
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -14,40 +14,29 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function listChats(): Promise<ChatSummary[]> {
-  return jsonFetch<ChatSummary[]>(`${API_BASE}/api/chats`);
+export function listSessions(): Promise<Session[]> {
+  return jsonFetch<Session[]>(`${API_BASE}/api/sessions`); // Assuming an endpoint to list all sessions
 }
 
-export function createChat(body: {
-  client_phone: string;
-  client_name: string;
-  client_details: string;
-}): Promise<{ id: string; chat: Chat }> {
-  return jsonFetch<{ id: string; chat: Chat }>(`${API_BASE}/api/chats`, {
+export function createSession(body: CreateSessionRequest): Promise<Session> {
+  return jsonFetch<Session>(`${API_BASE}/api/sessions`, {
     method: 'POST',
     body: JSON.stringify(body),
   });
 }
 
-export function getChat(chatId: string): Promise<{ id: string; chat: Chat }> {
-  return jsonFetch<{ id: string; chat: Chat }>(`${API_BASE}/api/chats/${encodeURIComponent(chatId)}`);
+export function getSession(sessionId: string): Promise<Session> {
+  return jsonFetch<Session>(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`);
 }
 
-export function sendTelegram(chatId: string, text: string): Promise<{ success: boolean }> {
-  return jsonFetch<{ success: boolean }>(`${API_BASE}/api/telegram/send`, {
+export function sendMessage(sessionId: string, body: SendMessageRequest): Promise<Session> {
+  return jsonFetch<Session>(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/send`, {
     method: 'POST',
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify(body),
   });
 }
 
-export function pollTelegram(chatId: string): Promise<{ messages: TelegramMessage[] }> {
-  const url = `${API_BASE}/api/telegram/messages?chat_id=${encodeURIComponent(chatId)}`;
-  return jsonFetch<{ messages: TelegramMessage[] }>(url);
-}
+// The following functions are removed as they are no longer relevant for the new backend:
+// - pollTelegram: Incoming messages are part of the session object via getSession
+// - sendGemini: Gemini calls are handled by the backend
 
-export function sendGemini(chatId: string, text: string): Promise<{ reply: string; chat: Chat }> {
-  return jsonFetch<{ reply: string; chat: Chat }>(`${API_BASE}/api/gemini/send`, {
-    method: 'POST',
-    body: JSON.stringify({ chat_id: chatId, text }),
-  });
-}

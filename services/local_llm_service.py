@@ -67,6 +67,11 @@ Based on the conversation history, provide the following analysis in a single JS
             
             # Parse the JSON and return it
             analysis_json = json.loads(json_part)
+
+            # Safeguard: Ensure latest_interaction_summary is a string
+            if isinstance(analysis_json.get("latest_interaction_summary"), dict):
+                analysis_json["latest_interaction_summary"] = json.dumps(analysis_json["latest_interaction_summary"])
+
             analysis_json["last_analysis_at"] = datetime.utcnow()
             return analysis_json
 

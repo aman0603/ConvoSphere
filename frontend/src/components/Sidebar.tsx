@@ -1,27 +1,37 @@
 import React, { useState } from 'react';
-import type { ChatSummary } from '../types';
+import type { Session, CreateSessionRequest } from '../types';
 
 interface Props {
-  chats: ChatSummary[];
-  activeChatId: string | null;
-  onSelectChat: (id: string) => void;
-  onCreateChat: (data: { client_phone: string; client_name: string; client_details: string }) => Promise<void>;
+  sessions: Session[];
+  activeSessionId: string | null;
+  onSelectSession: (id: string) => void;
+  onCreateSession: (data: CreateSessionRequest) => Promise<void>;
 }
 
-const Sidebar: React.FC<Props> = ({ chats, activeChatId, onSelectChat, onCreateChat }) => {
+const Sidebar: React.FC<Props> = ({ sessions, activeSessionId, onSelectSession, onCreateSession }) => {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
-  const [details, setDetails] = useState('');
+  const [context, setContext] = useState(''); // New state for context
+  const [goal, setGoal] = useState(''); // New state for goal
+  const [ownerId, setOwnerId] = useState('sales_agent_001'); // New state for owner_id, with a default
   const [creating, setCreating] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
     try {
-      await onCreateChat({ client_phone: phone, client_name: name, client_details: details });
+      await onCreateSession({
+        name: name,
+        phone: phone,
+        context: context,
+        goal: goal,
+        owner_id: ownerId,
+      });
       setPhone('');
       setName('');
-      setDetails('');
+      setContext('');
+      setGoal('');
+      // ownerId can persist or reset, depending on UX choice
     } finally {
       setCreating(false);
     }
@@ -49,15 +59,7 @@ const Sidebar: React.FC<Props> = ({ chats, activeChatId, onSelectChat, onCreateC
         <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.75rem' }}>Session Setup</div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <label style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', color: '#9ca3af' }}>
-            phone no.:
-            <input
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              style={{ width: '100%', marginTop: 2, padding: '0.25rem 0.4rem', borderRadius: 4, border: '1px solid #1f2937', background: '#020617', color: '#e5e7eb' }}
-            />
-          </label>
-          <label style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', color: '#9ca3af' }}>
-            name of client:
+            Client Name:
             <input
               value={name}
               onChange={e => setName(e.target.value)}
@@ -65,12 +67,36 @@ const Sidebar: React.FC<Props> = ({ chats, activeChatId, onSelectChat, onCreateC
             />
           </label>
           <label style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', color: '#9ca3af' }}>
-            client details aware of:
+            Client Phone:
+            <input
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              style={{ width: '100%', marginTop: 2, padding: '0.25rem 0.4rem', borderRadius: 4, border: '1px solid #1f2937', background: '#020617', color: '#e5e7eb' }}
+            />
+          </label>
+          <label style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', color: '#9ca3af' }}>
+            Client Context:
             <textarea
-              value={details}
-              onChange={e => setDetails(e.target.value)}
-              rows={3}
+              value={context}
+              onChange={e => setContext(e.target.value)}
+              rows={2}
               style={{ width: '100%', marginTop: 2, padding: '0.25rem 0.4rem', borderRadius: 4, border: '1px solid #1f2937', background: '#020617', color: '#e5e7eb', resize: 'vertical' }}
+            />
+          </label>
+          <label style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', color: '#9ca3af' }}>
+            Sales Goal:
+            <input
+              value={goal}
+              onChange={e => setGoal(e.target.value)}
+              style={{ width: '100%', marginTop: 2, padding: '0.25rem 0.4rem', borderRadius: 4, border: '1px solid #1f2937', background: '#020617', color: '#e5e7eb' }}
+            />
+          </label>
+          <label style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', color: '#9ca3af' }}>
+            Your Agent ID:
+            <input
+              value={ownerId}
+              onChange={e => setOwnerId(e.target.value)}
+              style={{ width: '100%', marginTop: 2, padding: '0.25rem 0.4rem', borderRadius: 4, border: '1px solid #1f2937', background: '#020617', color: '#e5e7eb' }}
             />
           </label>
           <button
@@ -88,7 +114,7 @@ const Sidebar: React.FC<Props> = ({ chats, activeChatId, onSelectChat, onCreateC
               cursor: 'pointer',
             }}
           >
-            {creating ? 'Creating...' : 'Start Chat'}
+            {creating ? 'Creating...' : 'Start Session'}
           </button>
         </form>
       </div>
@@ -101,15 +127,18 @@ const Sidebar: React.FC<Props> = ({ chats, activeChatId, onSelectChat, onCreateC
           border: '1px solid #1f2937',
         }}
       >
-        <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Chat Sessions</div>
+        <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Active Sessions</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '40vh', overflowY: 'auto' }}>
-          {chats.map(chat => {
-            const label = chat.metadata.client_name || chat.id;
-            const active = chat.id === activeChatId;
+          {sessions.map(session => {
+            const label = session.customer.name || session.session_id;
+            const active = session.session_id === activeSessionId;
             return (
               <button
-                key={chat.id}
-                onClick={() => onSelectChat(chat.id)}
+                key={session.session_id}
+                onClick={() => {
+                  console.log("Selecting session with ID:", session.session_id);
+                  onSelectSession(session.session_id);
+                }}
                 style={{
                   textAlign: 'left',
                   padding: '0.4rem 0.5rem',
@@ -130,8 +159,8 @@ const Sidebar: React.FC<Props> = ({ chats, activeChatId, onSelectChat, onCreateC
               </button>
             );
           })}
-          {chats.length === 0 && (
-            <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>No chats yet. Create one above.</div>
+          {sessions.length === 0 && (
+            <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>No sessions yet. Create one above.</div>
           )}
         </div>
       </div>

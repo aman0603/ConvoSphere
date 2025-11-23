@@ -1,12 +1,11 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import uuid
 
 # Helper to generate UUIDs
 def generate_uuid() -> str:
     return str(uuid.uuid4())
-
 class Customer(BaseModel):
     name: str
     phone: str
@@ -49,7 +48,8 @@ class Alert(BaseModel):
     message: str
 
 class Session(BaseModel):
-    session_id: str = Field(default_factory=generate_uuid, alias="_id") # Use _id for MongoDB
+    model_config = {"populate_by_name": True}
+    session_id: str = Field(default_factory=generate_uuid, alias="_id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     owner: str # sales_agent_id
@@ -61,7 +61,7 @@ class Session(BaseModel):
     alerts: List[Alert] = Field(default_factory=list)
     status: str = "initialized" # "initialized" | "active" | "closed"
 
-# Request model for creating a new session
+# Request models
 class CreateSessionRequest(BaseModel):
     name: str
     phone: str
@@ -76,4 +76,3 @@ class NewMessageRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     text: str
-
