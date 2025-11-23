@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import TelegramChatPane from './components/TelegramChatPane';
-import GeminiChatPane from './components/GeminiChatPane'; // Reverted import
+import GeminiChatPane from './components/GeminiChatPane'; // Kept GeminiChatPane as per your request
 import type { Session, CreateSessionRequest } from './types';
 import { createSession, getSession, listSessions } from './api';
-
-const POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds
 
 const App: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -13,28 +11,26 @@ const App: React.FC = () => {
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
 
-  // Initial load of sessions
+  // Initial load of all sessions for the sidebar
   useEffect(() => {
     listSessions()
       .then(setSessions)
-      .catch((err) => {
-        console.error("Failed to load sessions:", err);
-        // ignore initial load errors, e.g., if no sessions exist
-      });
+      .catch((err) => console.error("Failed to load sessions:", err));
   }, []);
 
   // Effect to handle WebSocket connection for real-time updates
   useEffect(() => {
     if (!activeSessionId) {
+      setActiveSession(null);
       return;
     }
 
-    // Still fetch the session once initially when selected
+    // Fetch the session once initially when selected
     const fetchInitialSession = async () => {
       setLoadingSession(true);
       try {
-        const res = await getSession(activeSessionId);
-        setActiveSession(res);
+        const sessionData = await getSession(activeSessionId);
+        setActiveSession(sessionData);
       } catch (error) {
         console.error('Failed to fetch initial session:', error);
         setActiveSession(null);
@@ -47,51 +43,26 @@ const App: React.FC = () => {
     const wsUrl = `ws://localhost:8000/ws/${activeSessionId}`;
     const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-      console.log(`WebSocket connected for session: ${activeSessionId}`);
-    };
-
+    ws.onopen = () => console.log(`WebSocket connected for session: ${activeSessionId}`);
     ws.onmessage = (event) => {
-      console.log("WebSocket message received:", event.data);
       try {
         const updatedSession = JSON.parse(event.data);
         setActiveSession(updatedSession);
-        console.log("Called setActiveSession with:", updatedSession);
       } catch (error) {
         console.error("Failed to parse WebSocket message:", error);
       }
     };
+    ws.onclose = () => console.log(`WebSocket disconnected for session: ${activeSessionId}`);
+    ws.onerror = (error) => console.error("WebSocket error:", error);
 
-    ws.onclose = () => {
-      console.log(`WebSocket disconnected for session: ${activeSessionId}`);
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    // Cleanup WebSocket on unmount or when activeSessionId changes
-    return () => {
-      ws.close();
-    };
+    // Cleanup WebSocket on component unmount or when activeSessionId changes
+    return () => ws.close();
   }, [activeSessionId]);
 
-  // New useEffect to log when activeSession state actually changes
-  useEffect(() => {
-    console.log("activeSession state has been updated:", activeSession);
-  }, [activeSession]);
-
   async function handleCreateSession(data: CreateSessionRequest) {
-    const res = await createSession(data);
-    // Add new session to the list if not already there
-    setSessions((prev) => {
-      if (!prev.some(s => s.session_id === res.session_id)) {
-        return [...prev, res];
-      }
-      return prev;
-    });
-    setActiveSessionId(res.session_id);
-    setActiveSession(res);
+    const newSession = await createSession(data);
+    setSessions((prev) => [...prev, newSession]);
+    setActiveSessionId(newSession.session_id);
   }
 
   function handleSelectSession(id: string) {
@@ -99,8 +70,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#020617', color: '#e5e7eb' }}>
-      {console.log("Sessions passed to Sidebar:", sessions)} {/* Debug log */}
+    <div style={{ display: 'flex', height: '100vh', background: '#0f1419', color: '#e5e7eb' }}>
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -120,43 +90,28 @@ const App: React.FC = () => {
           style={{
             display: 'flex',
             width: '100%',
-            maxWidth: 1180,
-            gap: '1rem',
+            maxWidth: 1280,
+            gap: '1.25rem',
           }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <TelegramChatPane sessionId={activeSessionId} session={activeSession} />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {activeSessionId ? (
+              <TelegramChatPane sessionId={activeSessionId} session={activeSession} />
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ maxWidth: 460, width: '100%', padding: '2rem 1.75rem', borderRadius: 16, background: '#1a1d29', border: '1px solid #2a2f3d', boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.75rem', color: '#ffffff' }}>Welcome to ConvoSphere</div>
+                  <div style={{ fontSize: '1rem', color: '#9ca3af', marginBottom: '1.5rem', lineHeight: 1.5 }}>Start a new chat session or pick a previous conversation from the list on the left.</div>
+                </div>
+              </div>
+            )}
           </div>
-          <div
-            style={{
-              width: 2,
-              background: '#374151',
-              alignSelf: 'stretch',
-              position: 'relative',
-              margin: '0 0.25rem',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                top: '-0.6rem',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                fontSize: '0.7rem',
-                color: '#6b7280',
-                padding: '0 0.25rem',
-                background: '#020617',
-              }}
-            >
-              LLM INSIGHTS
+          {activeSessionId && (
+            <div style={{ width: 360, minWidth: 340 }}>
+              {loadingSession && <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem', textAlign: 'center' }}>Loading Session...</div>}
+              <GeminiChatPane session={activeSession} />
             </div>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {loadingSession && <div style={{ fontSize: '0.9rem', color: '#9ca3af' }}>Loading session...</div>}
-            <GeminiChatPane // Reverted component name
-              session={activeSession}
-            />
-          </div>
+          )}
         </div>
       </div>
     </div>

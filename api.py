@@ -13,7 +13,6 @@ from services.telegram_router import TelegramRouter
 from gemini_client import GeminiClient # Still using the old gemini_client.py
 from services.local_llm_service import get_llm_service, LocalLLMService
 from services.connection_manager import ConnectionManager # Import ConnectionManager
-
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -165,41 +164,37 @@ async def run_gemini_call(session_id: str, task: str, db: AsyncIOMotorDatabase):
         print(f"Gemini call failed: Session {session_id} not found.")
         return
 
-    session = Session(**session_doc)
+    session = Session.model_validate(session_doc)
+    
+    # --- Load temporary OSINT data ---
+    osint_data = {}
+    try:
+        with open("profiles_by_url (1).json", "r", encoding='utf-8') as f:
+            osint_data = json.load(f)[0]
+    except Exception as e:
+        print(f"--- Could not load temporary OSINT profile for Gemini: {e} ---")
+    # ---
 
-    # Construct Gemini payload (as per AGENT_ARCHITECTURE.md, section 8)
+    # Construct Gemini payload
     gemini_payload = {
         "session_id": session.session_id,
-        "customer": session.customer.dict(),
-        "osint": session.osint.dict() if session.osint else {},
-        "short_context": [msg.dict() for msg in session.messages[-20:]], # Last 20 messages
-        "long_context_summary": session.local_llm.long_summary if session.local_llm else None,
-        "local_llm_analysis": session.local_llm.dict() if session.local_llm else {},
-        "task": task
+        "customer": session.customer.model_dump(),
+        "osint": osint_data,
+        "short_context": [msg.model_dump() for msg in session.messages[-10:]], # Last 10 messages
+        "local_llm_analysis": session.local_llm.model_dump(),
+        "task": task # The user's prompt from the Gemini chat pane
     }
 
-    # TODO: Implement PII sanitization before sending to Gemini if policy demands (section 8)
-
     try:
-        # For now, we'll use a mock response. In a real scenario, you'd call gemini_client methods.
-        # Example: response = await gemini_client_instance.some_gemini_method(prompt, model, formatted_payload)
-        # For this placeholder, we'll just log and return a mock.
+        # In a real scenario, you would format this payload into a proper prompt for Gemini
+        prompt = f"Analyze the following sales session and provide a strategic recommendation. \n\n{json.dumps(gemini_payload, indent=2)}"
         
-        # This is a mock interaction, actual gemini client methods like parse_initial_info are specific
-        # We need a generic method to handle different tasks for gemini_call
-        # Let's assume a generic `process_task` for now.
-        
-        # TODO: Replace with actual GeminiClient method call based on `task`
-        mock_response = {
-            "summary": f"Gemini mock summary for task '{task}' and session {session_id}",
-            "recommendation": "Mocked recommendation: Follow up next week.",
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        response_text = await gemini_client_instance.generate_content(prompt)
         
         gemini_result = {
             "last_call_at": datetime.utcnow(),
             "payload_sent": gemini_payload,
-            "response": mock_response
+            "response": {"reply": response_text} # Store the response
         }
 
         await sessions_collection.update_one(
@@ -207,12 +202,24 @@ async def run_gemini_call(session_id: str, task: str, db: AsyncIOMotorDatabase):
             {"$set": {"gemini": gemini_result, "updated_at": datetime.utcnow()}}
         )
         print(f"--- Gemini call completed for session: {session_id} ---")
+
+        # Broadcast the final update
+        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
+        if updated_session_doc:
+            session_to_broadcast = Session.model_validate(updated_session_doc)
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+
     except Exception as e:
         print(f"--- Gemini call failed for session {session_id}: {e} ---")
         await sessions_collection.update_one(
             {"_id": session_id},
             {"$set": {"gemini.error": str(e), "updated_at": datetime.utcnow()}}
         )
+        # Broadcast the error update
+        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
+        if updated_session_doc:
+            session_to_broadcast = Session.model_validate(updated_session_doc)
+            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
 
 
 # --- FastAPI Event Handlers ---
@@ -267,7 +274,7 @@ async def create_session(
         "status": "initialized"
     }
     
-    new_session_obj = Session(**session_data)
+    new_session_obj = Session.model_validate(session_data)
     
     try:
         await sessions_collection.insert_one(new_session_obj.model_dump(by_alias=True))
@@ -290,6 +297,13 @@ async def list_sessions(
     except pymongo.errors.PyMongoError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
 
+    try:
+        sessions_cursor = sessions_collection.find({})
+        sessions = await sessions_cursor.to_list(length=100)
+        return sessions
+    except pymongo.errors.PyMongoError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
+
 @app.get("/api/sessions/{session_id}", response_model=Session)
 async def get_session(
     session_id: str,
@@ -299,7 +313,7 @@ async def get_session(
     try:
         session = await sessions_collection.find_one({"_id": session_id})
         if session:
-            return Session(**session)
+            return Session.model_validate(session)
         else:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session with ID {session_id} not found")
     except pymongo.errors.PyMongoError as e:
@@ -324,12 +338,22 @@ async def add_message_to_session(
             timestamp=datetime.utcnow()
         )
         
+        # Prepare update operations
+        update_operations = {
+            "$push": {"messages": new_message.dict(exclude_none=True)},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+        
+        # If telegram_user_id is provided, also set it on the customer object
+        if message_request.telegram_user_id:
+            # We need to explicitly set the customer.telegram_user_id
+            # This handles cases where the session might not have it yet
+            update_operations["$set"]["customer.telegram_user_id"] = message_request.telegram_user_id
+            print(f"--- Updating session {session_id} with customer.telegram_user_id: {message_request.telegram_user_id} ---")
+
         update_result = await sessions_collection.update_one(
             {"_id": session_id},
-            {
-                "$push": {"messages": new_message.dict(exclude_none=True)},
-                "$set": {"updated_at": datetime.utcnow()}
-            }
+            update_operations
         )
         
         if update_result.matched_count == 0:
@@ -337,7 +361,7 @@ async def add_message_to_session(
         
         updated_session_doc = await sessions_collection.find_one({"_id": session_id})
         if updated_session_doc:
-            updated_session = Session(**updated_session_doc)
+            updated_session = Session.model_validate(updated_session_doc)
             # Enqueue Local LLM analysis as a background task
             background_tasks.add_task(run_local_llm_analyze, updated_session.session_id, db, background_tasks)
             
@@ -377,6 +401,17 @@ async def send_outbound_message(
             print(f"Failed to send Telegram message: {telegram_send_result.get('detail')}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to send message: {telegram_send_result.get('detail')}")
 
+        # Update session with telegram_user_id if available and not set
+        if "telegram_user_id" in telegram_send_result:
+            tid = telegram_send_result["telegram_user_id"]
+            current_tid = session.get("customer", {}).get("telegram_user_id")
+            if current_tid != tid:
+                print(f"--- Learning Telegram User ID {tid} for session {session_id} ---")
+                await sessions_collection.update_one(
+                    {"_id": session_id},
+                    {"$set": {"customer.telegram_user_id": tid}}
+                )
+
         # Create a Message object as if sent by the agent
         new_message = Message(
             session_id=session_id,
@@ -409,6 +444,26 @@ async def send_outbound_message(
     except pymongo.errors.PyMongoError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {e}")
 
+
+@app.post("/api/sessions/{session_id}/trigger_gemini", response_model=GeminiAnalysis)
+async def trigger_gemini_analysis(
+    session_id: str,
+    request: SendMessageRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncIOMotorDatabase = Depends(get_mongo_client),
+    sessions_collection: AsyncIOMotorCollection = Depends(get_sessions_collection)
+):
+    # Enqueue the background task
+    background_tasks.add_task(run_gemini_call, session_id, request.text, db)
+    
+    # Immediately fetch and return the current gemini analysis (might be empty or old)
+    # The frontend will update in real-time via WebSocket once the task completes
+    session_doc = await sessions_collection.find_one({"_id": session_id})
+    if session_doc and session_doc.get("gemini"):
+        return GeminiAnalysis.model_validate(session_doc["gemini"])
+    else:
+        # Return an empty GeminiAnalysis if no analysis exists yet
+        return GeminiAnalysis()
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, db: AsyncIOMotorDatabase = Depends(get_mongo_client)):

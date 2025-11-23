@@ -7,11 +7,11 @@ import uuid
 def generate_uuid() -> str:
     return str(uuid.uuid4())
 class Customer(BaseModel):
-    name: str
-    phone: str
-    context: str
-    goal: str
-
+  name: str
+  phone: str
+  context: str
+  goal: str
+  telegram_user_id: Optional[int] = None
 class OSINT(BaseModel):
     numverify: Optional[Dict[str, Any]] = None
     linkedin: Optional[Dict[str, Any]] = None
@@ -27,6 +27,7 @@ class Message(BaseModel):
     sender: str # "agent" | "customer" | "system"
     channel: str # "telegram" | "streamlit"
     text: str
+    telegram_user_id: Optional[int] = None # Added for Telegram message routing
 
 class LocalLLMAnalysis(BaseModel):
     last_analysis_at: Optional[datetime] = None
@@ -40,6 +41,7 @@ class GeminiAnalysis(BaseModel):
     last_call_at: Optional[datetime] = None
     payload_sent: Optional[Dict[str, Any]] = None
     response: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
 
 class Alert(BaseModel):
     alert_id: str = Field(default_factory=generate_uuid)
@@ -73,6 +75,7 @@ class NewMessageRequest(BaseModel):
     sender: str
     text: str
     channel: str
+    telegram_user_id: Optional[int] = None
 
 class SendMessageRequest(BaseModel):
     text: str

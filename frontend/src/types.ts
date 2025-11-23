@@ -1,3 +1,5 @@
+// These types are based on the Pydantic models in the backend's schemas.py
+
 export interface Customer {
   name: string;
   phone: string;
@@ -27,8 +29,8 @@ export interface LocalLLMAnalysis {
   last_analysis_at?: string; // ISO8601 string
   global_summary?: string;
   latest_interaction_summary?: string;
-  current_sentiment?: 'Positive' | 'Neutral' | 'Skeptical' | 'Negative' | 'Curious';
-  conversation_state_tag?: 'Rapport_Building' | 'Needs_Discovery' | 'Solution_Pitching' | 'Price_Negotiation' | 'Objection_Handling' | 'Closing' | 'Stalled';
+  current_sentiment?: string;
+  conversation_state_tag?: string;
   error?: string;
 }
 
@@ -40,7 +42,7 @@ export interface GeminiAnalysis {
 
 export interface Alert {
   alert_id: string;
-  type: 'high_intent' | 'risk' | 'info';
+  type: string;
   created_at: string; // ISO8601 string
   message: string;
 }
@@ -56,9 +58,10 @@ export interface Session {
   local_llm: LocalLLMAnalysis;
   gemini: GeminiAnalysis;
   alerts: Alert[];
-  status: 'initialized' | 'active' | 'closed';
+  status: string;
 }
 
+// Request models
 export interface CreateSessionRequest {
   name: string;
   phone: string;

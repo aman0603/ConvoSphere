@@ -41,36 +41,47 @@ class TelegramRouter:
         
         try:
             sender = await event.get_sender()
-            if hasattr(sender, 'phone') and sender.phone:
-                phone_number = f"+{sender.phone}"
-                
-                # Find session by phone number - this is a fallback and may not work for all users
-                sessions_collection = self.db["sessions"]
-                session_doc = await sessions_collection.find_one({"customer.phone": phone_number})
+            sender_telegram_user_id = sender.id # Telegram user ID is always available
+            
+            print(f"--- Sender Details: ID={sender_telegram_user_id}, Phone={getattr(sender, 'phone', 'N/A')}, Username={getattr(sender, 'username', 'N/A')} ---")
 
-                if session_doc:
-                    session_id = session_doc["_id"]
-                    
-                    # Make an API call to the add_message_to_session endpoint
-                    api_url = f"http://localhost:8000/api/sessions/{session_id}/messages"
-                    payload = {
-                        "sender": "customer",
-                        "text": event.raw_text,
-                        "channel": "telegram"
-                    }
-                    try:
-                        async with httpx.AsyncClient() as client:
-                            response = await client.post(api_url, json=payload)
-                            response.raise_for_status()
-                        print(f"--- Relayed inbound message to API for session {session_id} ---")
-                    except httpx.HTTPStatusError as e:
-                        print(f"--- Failed to relay inbound message to API (HTTP Status): {e.response.status_code} ---")
-                    except httpx.RequestError as e:
-                        print(f"--- Failed to relay inbound message to API (Request Error): {e} ---")
-                else:
-                    print(f"--- No session found for phone number: {phone_number} ---")
+            
+            # Find session by Telegram user ID first, then fallback to phone/username
+            sessions_collection = self.db["sessions"]
+            or_conditions = [
+                {"customer.telegram_user_id": sender_telegram_user_id},
+            ]
+            if hasattr(sender, 'phone') and sender.phone:
+                or_conditions.append({"customer.phone": f"+{sender.phone}"})
+            if hasattr(sender, 'username') and sender.username:
+                or_conditions.append({"customer.username": f"@{sender.username}"})
+
+            session_doc = await sessions_collection.find_one({
+                "$or": or_conditions
+            })
+
+            if session_doc:
+                session_id = session_doc["_id"]
+                
+                # Make an API call to the add_message_to_session endpoint
+                api_url = f"http://localhost:8000/api/sessions/{session_id}/messages"
+                payload = {
+                    "sender": "customer",
+                    "text": event.raw_text,
+                    "channel": "telegram",
+                    "telegram_user_id": sender_telegram_user_id # Include sender's Telegram user ID
+                }
+                try:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(api_url, json=payload)
+                        response.raise_for_status()
+                    print(f"--- Relayed inbound message to API for session {session_id} ---")
+                except httpx.HTTPStatusError as e:
+                    print(f"--- Failed to relay inbound message to API (HTTP Status): {e.response.status_code} ---")
+                except httpx.RequestError as e:
+                    print(f"--- Failed to relay inbound message to API (Request Error): {e} ---")
             else:
-                print(f"--- Could not determine phone number for sender {event.sender_id}. Cannot route message. ---")
+                print(f"--- No session found for Telegram User ID: {sender_telegram_user_id}. Cannot route message. ---")
 
         except Exception as e:
             print(f"--- Error in message handler: {e} ---")
@@ -105,7 +116,12 @@ class TelegramRouter:
                 return {"status": "error", "detail": f"Could not resolve Telegram entity for {phone_number}"}
 
             sent_message = await self.client.send_message(entity, message_text)
-            return {"status": "sent", "message_id": sent_message.id, "phone": phone_number}
+            return {
+                "status": "sent", 
+                "message_id": sent_message.id, 
+                "phone": phone_number,
+                "telegram_user_id": entity.id # Return the resolved Telegram User ID
+            }
         except Exception as e:
             print(f"Error sending Telegram message: {e}")
             return {"status": "error", "detail": str(e)}
