@@ -74,82 +74,118 @@ async def run_osint_enrichment(session_id: str, db: AsyncIOMotorDatabase):
 
 # Local LLM Analyze Worker
 async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, background_tasks: BackgroundTasks):
-    print("--- Starting Local LLM analysis... ---")
-    sessions_collection = db["sessions"]
-    print(f"--- Starting Local LLM analysis for session: {session_id} ---")
+    with open("debug_api.txt", "a") as f:
+        f.write(f"run_local_llm_analyze called for {session_id}\n")
+    try:
+        print("--- Starting Local LLM analysis... ---")
+        sessions_collection = db["sessions"]
+        print(f"--- Starting Local LLM analysis for session: {session_id} ---")
 
-    session_doc = await sessions_collection.find_one({"_id": session_id})
-    if not session_doc:
-        print(f"Local LLM analysis failed: Session {session_id} not found.")
-        return
+        session_doc = await sessions_collection.find_one({"_id": session_id})
+        if not session_doc:
+            print(f"Local LLM analysis failed: Session {session_id} not found.")
+            return
 
-    session = Session.model_validate(session_doc)
+        session = Session.model_validate(session_doc)
     
-    # Prepare payload for Local LLM Service
-    llm_payload = {
-        "session_id": session.session_id,
-        "customer": session.customer.dict() if session.customer else {},
-        "osint": session.osint.dict() if session.osint else {},
-        "short_context": [
-            {**msg.dict(), "timestamp": msg.timestamp.isoformat()}
-            for msg in session.messages
-        ],
-        "long_context_summary": session.local_llm.global_summary if session.local_llm else None,
-        "goal": session.customer.goal if session.customer else None,
-        "task": "analyze_and_summarize"
-    }
-
-    # --- TEMPORARY FIX: Load profile from JSON to simulate orchestrator ---
-    # This block loads a hardcoded JSON file to simulate the output of the
-    # orchestrator. Once the orchestrator is fixed, this block should be
-    # removed and the enriched profile should be retrieved from the session.
-    try:
-        with open("profiles_by_url (1).json", "r", encoding='utf-8') as f:
-            enriched_profile = json.load(f)[0] # Take the first profile
-            llm_payload["enriched_profile"] = enriched_profile
-            print("--- Loaded temporary profile for Dr. Deepti Singh ---")
-    except (FileNotFoundError, IndexError, json.JSONDecodeError) as e:
-        print(f"--- Could not load temporary profile: {e} ---")
-    # --- END OF TEMPORARY FIX ---
-
-    try:
-        analysis_result = await local_llm_service.analyze(llm_payload)
+        # Capture previous client mode for intent change detection
+        old_client_mode = None
+        if session.local_llm and session.local_llm.analysis:
+            old_client_mode = session.local_llm.analysis.client_mode
         
-        # --- Save LLM result to a file for analysis ---
-        # Create a serializable copy for JSON dumping
-        serializable_result = analysis_result.copy()
-        if 'last_analysis_at' in serializable_result and isinstance(serializable_result['last_analysis_at'], datetime):
-            serializable_result['last_analysis_at'] = serializable_result['last_analysis_at'].isoformat()
-        
-        with open("llm_analysis_result.json", "w") as f:
-            json.dump(serializable_result, f, indent=2)
-        print("--- Saved LLM analysis result to llm_analysis_result.json ---")
-        # --- End of save block ---
+        # Prepare payload for Local LLM Service
+        llm_payload = {
+            "session_id": session.session_id,
+            "customer": session.customer.dict() if session.customer else {},
+            "osint": session.osint.dict() if session.osint else {},
+            "short_context": [
+                {**msg.dict(), "timestamp": msg.timestamp.isoformat()}
+                for msg in session.messages
+            ],
+            "goal": session.customer.goal if session.customer else None,
+            "task": "analyze_and_summarize"
+        }
 
-        # Update session with the new structured LLM analysis
-        # Motor/MongoDB can handle the original datetime object
-        await sessions_collection.update_one(
-            {"_id": session_id},
-            {"$set": {"local_llm": analysis_result, "updated_at": datetime.utcnow()}}
-        )
-        print(f"--- Local LLM analysis completed and session updated for {session_id} ---")
+        # --- TEMPORARY FIX: Load profile from JSON to simulate orchestrator ---
+        try:
+            with open("profiles_by_url (1).json", "r", encoding='utf-8') as f:
+                enriched_profile = json.load(f)[0] # Take the first profile
+                llm_payload["osint"] = enriched_profile # Use this as OSINT
+                print("--- Loaded temporary profile for Dr. Deepti Singh ---")
+        except (FileNotFoundError, IndexError, json.JSONDecodeError) as e:
+            print(f"--- Could not load temporary profile: {e} ---")
+        # --- END OF TEMPORARY FIX ---
 
-        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
-        if updated_session_doc:
-            session_to_broadcast = Session.model_validate(updated_session_doc)
-            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+        try:
+            analysis_result = await local_llm_service.analyze(llm_payload)
+            
+            # --- Save LLM result to a file for analysis ---
+            serializable_result = analysis_result.copy()
+            if 'last_analysis_at' in serializable_result and isinstance(serializable_result['last_analysis_at'], datetime):
+                serializable_result['last_analysis_at'] = serializable_result['last_analysis_at'].isoformat()
+            
+            with open("llm_analysis_result.json", "w") as f:
+                json.dump(serializable_result, f, indent=2)
+            print("--- Saved LLM analysis result to llm_analysis_result.json ---")
+            # --- End of save block ---
+
+            # Update session with the new structured LLM analysis
+            await sessions_collection.update_one(
+                {"_id": session_id},
+                {"$set": {"local_llm": analysis_result, "updated_at": datetime.utcnow()}}
+            )
+            print(f"--- Local LLM analysis completed and session updated for {session_id} ---")
+
+            updated_session_doc = await sessions_collection.find_one({"_id": session_id})
+            if updated_session_doc:
+                session_to_broadcast = Session.model_validate(updated_session_doc)
+                await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+
+                # --- Conditional Gemini Triggering ---
+                should_trigger_gemini = False
+                trigger_reason = ""
+                
+                # Check new client mode
+                new_client_mode = None
+                if session_to_broadcast.local_llm and session_to_broadcast.local_llm.analysis:
+                    new_client_mode = session_to_broadcast.local_llm.analysis.client_mode
+
+                # Condition 1: Every 5 messages
+                msg_count = len(session_to_broadcast.messages)
+                if msg_count > 0 and msg_count % 5 == 0:
+                    should_trigger_gemini = True
+                    trigger_reason = f"message_count_{msg_count}"
+                
+                # Condition 2: Intent Change
+                elif old_client_mode and new_client_mode and old_client_mode != new_client_mode:
+                    should_trigger_gemini = True
+                    trigger_reason = f"intent_change_from_{old_client_mode}_to_{new_client_mode}"
+                
+                if should_trigger_gemini:
+                    print(f"--- Triggering Gemini due to: {trigger_reason} ---")
+                    # Trigger Gemini with a default strategic review task
+                    background_tasks.add_task(run_gemini_call, session_id, f"Automatic Strategic Review ({trigger_reason})", db)
+
+        except Exception as e:
+            print(f"--- Error in conditional Gemini trigger: {e} ---")
+            with open("debug_error.txt", "a") as f:
+                f.write(f"Error in conditional Gemini trigger: {e}\n")
 
     except Exception as e:
-        print(f"--- Local LLM analysis failed for session {session_id}: {e} ---")
-        await sessions_collection.update_one(
-            {"_id": session_id},
-            {"$set": {"local_llm.error": str(e), "updated_at": datetime.utcnow()}}
-        )
-        # Also broadcast the error update
-        updated_session_doc = await sessions_collection.find_one({"_id": session_id})
-        if updated_session_doc:
-            session_to_broadcast = Session.model_validate(updated_session_doc)
-            await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
+        import traceback
+        error_msg = f"CRITICAL ERROR in run_local_llm_analyze for session {session_id}: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+        with open("debug_error.txt", "a") as f:
+            f.write(error_msg + "\n")
+        
+        # Try to update status if possible
+        try:
+            await sessions_collection.update_one(
+                {"_id": session_id},
+                {"$set": {"local_llm.error": str(e), "updated_at": datetime.utcnow()}}
+            )
+        except:
+            pass
 
     print("--- Finished Local LLM analysis. ---")
 
@@ -328,6 +364,8 @@ async def add_message_to_session(
     db: AsyncIOMotorDatabase = Depends(get_mongo_client),
     sessions_collection: AsyncIOMotorCollection = Depends(get_sessions_collection)
 ):
+    with open("debug_api.txt", "a") as f:
+        f.write(f"add_message_to_session called for {session_id}\n")
     try:
         # Create a Message object
         new_message = Message(
@@ -362,8 +400,40 @@ async def add_message_to_session(
         updated_session_doc = await sessions_collection.find_one({"_id": session_id})
         if updated_session_doc:
             updated_session = Session.model_validate(updated_session_doc)
-            # Enqueue Local LLM analysis as a background task
+            
+            # Enqueue Local LLM analysis as a background task (Always run Local LLM)
             background_tasks.add_task(run_local_llm_analyze, updated_session.session_id, db, background_tasks)
+            
+            # --- Conditional Gemini Triggering ---
+            should_trigger_gemini = False
+            trigger_reason = ""
+
+            # Condition 1: Every 5 messages
+            # Count only customer and agent messages? Or all? User said "every 5 messages".
+            # Let's count total messages for simplicity, or maybe just customer messages?
+            # Usually "every 5 messages" implies conversation turns.
+            msg_count = len(updated_session.messages)
+            if msg_count > 0 and msg_count % 5 == 0:
+                should_trigger_gemini = True
+                trigger_reason = "message_count_5"
+
+            # Condition 2: Sudden intent change
+            # We need to compare the NEW Local LLM analysis with the OLD one.
+            # But run_local_llm_analyze is a background task, so we don't have the result yet!
+            # To implement this correctly, we should probably move the Gemini trigger logic INSIDE run_local_llm_analyze
+            # after it completes.
+            
+            # However, for now, let's just trigger based on message count here, 
+            # and I will move the "Intent Change" check to `run_local_llm_analyze` in the next step.
+            
+            # Actually, let's NOT trigger Gemini here at all. 
+            # We should trigger it from `run_local_llm_analyze` after the local analysis is done.
+            # That way we can check for intent change AND message count.
+            
+            # So I will remove the direct Gemini trigger (if any existed) or just rely on the background task.
+            # Wait, the previous code didn't trigger Gemini automatically here, only Local LLM.
+            # The user wants "gemini api will be triggered after meeting condition".
+            # So I should add the logic to `run_local_llm_analyze`.
             
             # Broadcast the updated session to the client
             await manager.send_session_update(session_id, updated_session.model_dump(mode='json'))

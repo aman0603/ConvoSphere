@@ -29,13 +29,47 @@ class Message(BaseModel):
     text: str
     telegram_user_id: Optional[int] = None # Added for Telegram message routing
 
+class LLMMeta(BaseModel):
+    timestamp: str
+    confidence_score: float
+
+class LLMAnalysisData(BaseModel):
+    current_stage: str
+    client_mode: str
+    competitor_detected: bool
+    red_flags: List[str]
+    salesperson_critique: str
+
+class LLMTracker(BaseModel):
+    trust_level: str
+    pain_points_discovered: List[str]
+    budget_clarity: str
+    authority_status: str
+
+class LLMStrategy(BaseModel):
+    suggested_next_message: str
+    suggested_question: str
+    personal_hook: str
+    timing_suggestion: str
+
+class LLMObjections(BaseModel):
+    predicted_next: str
+    probability: float
+    preemptive_tactic: str
+
 class LocalLLMAnalysis(BaseModel):
     last_analysis_at: Optional[datetime] = None
+    meta: Optional[LLMMeta] = None
+    analysis: Optional[LLMAnalysisData] = None
+    tracker: Optional[LLMTracker] = None
+    strategy: Optional[LLMStrategy] = None
+    objections: Optional[LLMObjections] = None
+    error: Optional[str] = None
+    # Legacy fields for backward compatibility (optional)
     global_summary: Optional[str] = None
     latest_interaction_summary: Optional[str] = None
     current_sentiment: Optional[str] = None
     conversation_state_tag: Optional[str] = None
-    error: Optional[str] = None
 
 class GeminiAnalysis(BaseModel):
     last_call_at: Optional[datetime] = None
