@@ -31,75 +31,27 @@ class LocalLLMService:
         rag_context = session_payload.get("rag_context", "No specific RAG context available.") # Placeholder
         
         # Construct the detailed prompt
+        # Construct the tactical prompt
         prompt = f"""
 # ROLE AND OBJECTIVE
-You are an elite Sales Strategist and Psychological Coach. Your goal is to assist a human salesperson in real-time during a live negotiation. You do not speak to the customer directly. Instead, you "whisper" strategic advice, psychological insights, and drafted responses to the salesperson to help them close the deal.
+You are a Tactical Analyst for a sales conversation. Your job is to monitor the chat stream and provide instantaneous, lightweight analysis.
 
-# INPUT CONTEXT DATA
+# INPUT CONTEXT
 1. **Sales Goal**: {goal}
-2. **Client Profile (OSINT)**: {json.dumps(osint_info, indent=2)}
-3. **Tactical Analysis**: (Self-contained in this analysis)
-4. **RAG Context**: {rag_context}
-5. **Chat History**: {json.dumps(short_context, indent=2)}
+2. **Chat History**: {json.dumps(short_context, indent=2)}
 
 # ANALYSIS INSTRUCTIONS
-You must analyze the inputs and generate a JSON output based on the following logic:
-
-## 1. State & Mode Detection
-- **Sales Stage**: Classify into exactly one of: [Initializing, Rapport Building, Needs Discovery, Solution Pitching, Objection Handling, Closing, Stall/Delay, Dead].
-- **Client Mode**: Detect psychological state: [Buying Mode, Validation Mode, Argumentative Mode, Delaying Mode].
-- **Competitor Flag**: If client mentions a competitor, set to true.
-
-## 2. Quality Control & Critique
-- **Passive/Pushy Check**: Warn if salesperson is too aggressive or passive.
-- **Red Flag Detector**: Identify risks like "Fake Interest" or "Authority Gap".
-
-## 3. OSINT & Personalization
-- **Bio-Hooks**: Analyze Client Profile for personal connections.
-
-## 4. B.A.N.T. Tracker
-- **Budget**: Unknown / Flexible / Specific Amount.
-- **Authority**: Gatekeeper / Influencer / Decision Maker.
-- **Need**: Specific pain points.
-- **Timeline**: Quarter / Immediate / Next Year.
-
-## 5. Actionable Strategy
-- **Draft Response**: Write a ready-to-send reply mirroring the salesperson's tone.
-- **Closing Trigger**: If stage is "Closing", suggest asking for PO.
+Analyze the latest interaction and the overall conversation flow.
 
 # OUTPUT FORMAT
 You must output **ONLY** a valid JSON object matching the schema below. Do not include markdown formatting or explanations outside the JSON.
 
 ```json
 {{
-  "meta": {{
-    "timestamp": "{datetime.utcnow().isoformat()}",
-    "confidence_score": 0.00
-  }},
-  "analysis": {{
-    "current_stage": "String",
-    "client_mode": "String",
-    "competitor_detected": false,
-    "red_flags": ["String"],
-    "salesperson_critique": "String"
-  }},
-  "tracker": {{
-    "trust_level": "String",
-    "pain_points_discovered": ["String"],
-    "budget_clarity": "String",
-    "authority_status": "String"
-  }},
-  "strategy": {{
-    "suggested_next_message": "String",
-    "suggested_question": "String",
-    "personal_hook": "String",
-    "timing_suggestion": "String"
-  }},
-  "objections": {{
-    "predicted_next": "String",
-    "probability": 0.00,
-    "preemptive_tactic": "String"
-  }}
+  "global_summary": "Updated abstract of full conversation.",
+  "latest_interaction_summary": "Specific summary of the last exchange.",
+  "current_sentiment": "Client's current emotional state (e.g., Skeptical, Curious, Annoyed).",
+  "conversation_state_tag": "One of: [Initializing, Rapport_Building, Needs_Discovery, Solution_Pitching, Objection_Handling, Closing, Stall, Dead]"
 }}
 ```
 """
@@ -114,34 +66,10 @@ You must output **ONLY** a valid JSON object matching the schema below. Do not i
                 raw_llm_output = """
 ```json
 {
-  "meta": {
-    "timestamp": "2023-10-27T10:00:00Z",
-    "confidence_score": 0.95
-  },
-  "analysis": {
-    "current_stage": "Needs Discovery",
-    "client_mode": "Buying Mode",
-    "competitor_detected": false,
-    "red_flags": [],
-    "salesperson_critique": "Good job asking open-ended questions."
-  },
-  "tracker": {
-    "trust_level": "High",
-    "pain_points_discovered": ["Cost", "Integration"],
-    "budget_clarity": "Medium",
-    "authority_status": "Decision Maker"
-  },
-  "strategy": {
-    "suggested_next_message": "That sounds great. What is your timeline for implementation?",
-    "suggested_question": "When do you need this live?",
-    "personal_hook": "I see you are in San Francisco.",
-    "timing_suggestion": "Follow up tomorrow."
-  },
-  "objections": {
-    "predicted_next": "Pricing",
-    "probability": 0.7,
-    "preemptive_tactic": "Emphasize ROI."
-  }
+  "global_summary": "Conversation started, user inquiring about pricing.",
+  "latest_interaction_summary": "User asked for enterprise pricing.",
+  "current_sentiment": "Curious",
+  "conversation_state_tag": "Needs_Discovery"
 }
 ```
 """

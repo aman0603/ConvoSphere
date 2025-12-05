@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import TelegramChatPane from './components/TelegramChatPane';
-import GeminiChatPane from './components/GeminiChatPane'; // Kept GeminiChatPane as per your request
+import GeminiChatPane from './components/GeminiChatPane';
+import OsintPane from './components/OsintPane';
 import type { Session, CreateSessionRequest } from './types';
 import { createSession, getSession, listSessions } from './api';
 
@@ -10,6 +11,7 @@ const App: React.FC = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [showOsint, setShowOsint] = useState(false);
 
   // Initial load of all sessions for the sidebar
   useEffect(() => {
@@ -47,6 +49,11 @@ const App: React.FC = () => {
     ws.onmessage = (event) => {
       try {
         const updatedSession = JSON.parse(event.data);
+        console.log('WebSocket message received:', {
+          gemini: updatedSession.gemini,
+          query_type: updatedSession.gemini?.query_type,
+          has_response: !!updatedSession.gemini?.response
+        });
         setActiveSession(updatedSession);
       } catch (error) {
         console.error("Failed to parse WebSocket message:", error);
@@ -96,7 +103,11 @@ const App: React.FC = () => {
         >
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {activeSessionId ? (
-              <TelegramChatPane sessionId={activeSessionId} session={activeSession} />
+              <TelegramChatPane 
+                sessionId={activeSessionId} 
+                session={activeSession} 
+                onShowOsint={() => setShowOsint(true)}
+              />
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ maxWidth: 460, width: '100%', padding: '2rem 1.75rem', borderRadius: 16, background: '#1a1d29', border: '1px solid #2a2f3d', boxShadow: '0 25px 60px rgba(0,0,0,0.5)' }}>
@@ -109,7 +120,30 @@ const App: React.FC = () => {
           {activeSessionId && (
             <div style={{ width: 360, minWidth: 340 }}>
               {loadingSession && <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem', textAlign: 'center' }}>Loading Session...</div>}
-              <GeminiChatPane session={activeSession} />
+              {showOsint ? (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <button
+                    onClick={() => setShowOsint(false)}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      marginBottom: '0.75rem',
+                      borderRadius: 8,
+                      border: '1px solid #2a2f3d',
+                      background: '#1a1d29',
+                      color: '#0ea5e9',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                    }}
+                  >
+                    ← Back to Gemini Chat
+                  </button>
+                  <OsintPane session={activeSession} />
+                </div>
+              ) : (
+                <GeminiChatPane session={activeSession} />
+              )}
             </div>
           )}
         </div>

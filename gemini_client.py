@@ -17,6 +17,16 @@ class GeminiClient:
         
         # genai.configure(api_key=api_key)
         self.client = genai.Client(api_key=api_key)
+
+    async def generate_content(self, prompt: str) -> str:
+        """Generic method to generate content from Gemini"""
+        try:
+            print("🤖 Gemini: Generating content...")
+            response = await asyncio.to_thread(self.client.models.generate_content, model="gemini-2.5-flash", contents=prompt)
+            return response.text
+        except Exception as e:
+            print(f"❌ Gemini generation error: {str(e)}")
+            return f"Error generating content: {str(e)}"
     
     async def parse_initial_info(self, name: str, phone: str, context_info: str, country_info: Dict) -> Dict[str, Any]:
         """Step 2: Parse initial person info and generate search query"""

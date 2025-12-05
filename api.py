@@ -14,6 +14,7 @@ from gemini_client import GeminiClient # Still using the old gemini_client.py
 from services.local_llm_service import get_llm_service, LocalLLMService
 from services.connection_manager import ConnectionManager # Import ConnectionManager
 from fastapi.middleware.cors import CORSMiddleware
+from orchestrator import PersonOSINTOrchestrator
 
 app = FastAPI(
     title="ConvoSphere API",
@@ -56,20 +57,68 @@ async def run_alert_dispatcher(session_id: str, alert_data: Dict[str, Any], db: 
     print(f"--- Alert saved for session {session_id} ---")
 
 
-# Placeholder for OSINT enrichment function
+# OSINT enrichment function using PersonOSINTOrchestrator
 async def run_osint_enrichment(session_id: str, db: AsyncIOMotorDatabase):
     sessions_collection = db["sessions"]
     print(f"--- Starting OSINT enrichment for session: {session_id} ---")
     
-    # Simulate work
-    await asyncio.sleep(5) 
-    
-    # Update session status (example)
-    await sessions_collection.update_one(
-        {"_id": session_id},
-        {"$set": {"osint.status": "completed", "updated_at": datetime.utcnow()}}
-    )
-    print(f"--- OSINT enrichment completed for session: {session_id} ---")
+    try:
+        # Fetch session document
+        session_doc = await sessions_collection.find_one({"_id": session_id})
+        if not session_doc:
+            print(f"OSINT enrichment failed: Session {session_id} not found.")
+            return
+        
+        # Update status to processing
+        await sessions_collection.update_one(
+            {"_id": session_id},
+            {"$set": {"osint.status": "processing", "updated_at": datetime.utcnow()}}
+        )
+        
+        # Extract customer data
+        customer = session_doc.get('customer', {})
+        phone = customer.get('phone', '')
+        name = customer.get('name', '')
+        context_info = customer.get('context', '')
+        
+        if not phone or not name:
+            print(f"OSINT enrichment failed: Missing phone or name for session {session_id}")
+            await sessions_collection.update_one(
+                {"_id": session_id},
+                {"$set": {"osint.status": "failed", "osint.error": "Missing required customer data", "updated_at": datetime.utcnow()}}
+            )
+            return
+        
+        # Run the orchestrator
+        orchestrator = PersonOSINTOrchestrator()
+        result = await orchestrator.enrich_person(phone, name, context_info)
+        
+        # Save the enrichment result to the session
+        await sessions_collection.update_one(
+            {"_id": session_id},
+            {
+                "$set": {
+                    "osint.status": "completed",
+                    "osint.data": result,
+                    "osint.completed_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+        print(f"--- OSINT enrichment completed successfully for session: {session_id} ---")
+        
+    except Exception as e:
+        print(f"OSINT enrichment error for session {session_id}: {type(e).__name__}: {e}")
+        await sessions_collection.update_one(
+            {"_id": session_id},
+            {
+                "$set": {
+                    "osint.status": "failed",
+                    "osint.error": str(e),
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
 
 
 # Local LLM Analyze Worker
@@ -88,16 +137,11 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
 
         session = Session.model_validate(session_doc)
     
-        # Capture previous client mode for intent change detection
-        old_client_mode = None
-        if session.local_llm and session.local_llm.analysis:
-            old_client_mode = session.local_llm.analysis.client_mode
-        
         # Prepare payload for Local LLM Service
         llm_payload = {
             "session_id": session.session_id,
             "customer": session.customer.dict() if session.customer else {},
-            "osint": session.osint.dict() if session.osint else {},
+            # "osint": session.osint.dict() if session.osint else {},
             "short_context": [
                 {**msg.dict(), "timestamp": msg.timestamp.isoformat()}
                 for msg in session.messages
@@ -105,16 +149,6 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
             "goal": session.customer.goal if session.customer else None,
             "task": "analyze_and_summarize"
         }
-
-        # --- TEMPORARY FIX: Load profile from JSON to simulate orchestrator ---
-        try:
-            with open("profiles_by_url (1).json", "r", encoding='utf-8') as f:
-                enriched_profile = json.load(f)[0] # Take the first profile
-                llm_payload["osint"] = enriched_profile # Use this as OSINT
-                print("--- Loaded temporary profile for Dr. Deepti Singh ---")
-        except (FileNotFoundError, IndexError, json.JSONDecodeError) as e:
-            print(f"--- Could not load temporary profile: {e} ---")
-        # --- END OF TEMPORARY FIX ---
 
         try:
             analysis_result = await local_llm_service.analyze(llm_payload)
@@ -145,26 +179,16 @@ async def run_local_llm_analyze(session_id: str, db: AsyncIOMotorDatabase, backg
                 should_trigger_gemini = False
                 trigger_reason = ""
                 
-                # Check new client mode
-                new_client_mode = None
-                if session_to_broadcast.local_llm and session_to_broadcast.local_llm.analysis:
-                    new_client_mode = session_to_broadcast.local_llm.analysis.client_mode
-
-                # Condition 1: Every 5 messages
-                msg_count = len(session_to_broadcast.messages)
-                if msg_count > 0 and msg_count % 5 == 0:
+                # Condition: Trigger after EVERY customer reply
+                # Check if the last message in the session is from the customer
+                if session_to_broadcast.messages and session_to_broadcast.messages[-1].sender == "customer":
                     should_trigger_gemini = True
-                    trigger_reason = f"message_count_{msg_count}"
-                
-                # Condition 2: Intent Change
-                elif old_client_mode and new_client_mode and old_client_mode != new_client_mode:
-                    should_trigger_gemini = True
-                    trigger_reason = f"intent_change_from_{old_client_mode}_to_{new_client_mode}"
+                    trigger_reason = "customer_reply"
                 
                 if should_trigger_gemini:
                     print(f"--- Triggering Gemini due to: {trigger_reason} ---")
                     # Trigger Gemini with a default strategic review task
-                    background_tasks.add_task(run_gemini_call, session_id, f"Automatic Strategic Review ({trigger_reason})", db)
+                    background_tasks.add_task(run_gemini_call, session_id, "Strategic Review", db)
 
         except Exception as e:
             print(f"--- Error in conditional Gemini trigger: {e} ---")
@@ -202,35 +226,166 @@ async def run_gemini_call(session_id: str, task: str, db: AsyncIOMotorDatabase):
 
     session = Session.model_validate(session_doc)
     
-    # --- Load temporary OSINT data ---
+    # Extract OSINT final_summary from session
     osint_data = {}
-    try:
-        with open("profiles_by_url (1).json", "r", encoding='utf-8') as f:
-            osint_data = json.load(f)[0]
-    except Exception as e:
-        print(f"--- Could not load temporary OSINT profile for Gemini: {e} ---")
-    # ---
+    if session.osint and session.osint.data:
+        # Use the final_summary from the enriched OSINT data
+        osint_data = session.osint.data.get('final_summary', {})
+        print(f"--- Using OSINT final_summary for Gemini analysis ---")
+    else:
+        print(f"--- Warning: No OSINT data available for session {session_id} ---")
 
     # Construct Gemini payload
     gemini_payload = {
         "session_id": session.session_id,
-        "customer": session.customer.model_dump(),
-        "osint": osint_data,
-        "short_context": [msg.model_dump() for msg in session.messages[-10:]], # Last 10 messages
-        "local_llm_analysis": session.local_llm.model_dump(),
+        "customer": session.customer.model_dump(mode='json') if session.customer else {},
+        "osint": osint_data,  # Now contains final_summary with person_profile, sales_intelligence, etc.
+        "short_context": [msg.model_dump(mode='json') for msg in session.messages[-10:]], 
+        "local_llm_analysis": session.local_llm.model_dump(mode='json') if session.local_llm else {},
         "task": task # The user's prompt from the Gemini chat pane
     }
 
     try:
-        # In a real scenario, you would format this payload into a proper prompt for Gemini
-        prompt = f"Analyze the following sales session and provide a strategic recommendation. \n\n{json.dumps(gemini_payload, indent=2)}"
+        # Check if this is a user query or auto-triggered strategic review
+        is_user_query = task and task != "Strategic Review"
+        
+        if is_user_query:
+            # User asked a specific question - answer it directly
+            prompt = f"""
+# ROLE
+You are an elite Sales Strategist and AI Assistant helping a salesperson during a live negotiation.
+
+# USER'S QUESTION
+{task}
+
+# CONTEXT DATA
+{json.dumps(gemini_payload, indent=2)}
+
+# INSTRUCTIONS
+Answer the user's question directly and concisely using the context provided. Focus on:
+1. Directly addressing their specific question
+2. Using OSINT data (person_profile, sales_intelligence, company_context) to provide personalized insights
+3. Referencing the conversation history if relevant
+4. Providing actionable advice
+
+Keep your response clear, practical, and under 300 words.
+
+# OUTPUT FORMAT
+Provide your answer as a JSON object with this structure:
+{{
+  "answer": "Your direct answer to the user's question",
+  "key_insights": ["Insight 1", "Insight 2", "Insight 3"],
+  "suggested_action": "One specific action the salesperson should take"
+}}
+"""
+        else:
+            # Auto-triggered strategic review - use structured analysis
+            prompt = f"""
+# ROLE AND OBJECTIVE
+
+You are an elite Sales Strategist and Psychological Coach. Your goal is to assist a human salesperson in real-time during a live negotiation. You do not speak to the customer directly. Instead, you "whisper" strategic advice, psychological insights, and drafted responses to the salesperson to help them close the deal.
+
+
+
+# INPUT CONTEXT DATA
+{json.dumps(gemini_payload, indent=2)}
+
+
+# ANALYSIS INSTRUCTIONS
+
+You must analyze the inputs and generate a JSON output based on the following logic:
+
+## 1. State & Mode Detection
+- *Sales Stage*: Classify the conversation into exactly one of: [Initializing, Rapport Building, Needs Discovery, Solution Pitching, Objection Handling, Closing, Stall/Delay, Dead].
+- *Client Mode*: Detect the client's psychological state:
+  - Buying Mode: High intent, asking about implementation/pricing.
+  - Validation Mode: Rational, comparing features, asking "how".
+  - Argumentative Mode: Emotional, nitpicking, defensive.
+  - Delaying Mode: Vague, avoiding commitment ("send me an email").
+- *Competitor Flag*: If the client mentions a competitor, set to true and provide a specific counter-point in the strategy section. search about the client and suggest a counter point.
+
+## 2. Quality Control & Critique
+- *Passive/Pushy Check*: Warn if the salesperson is being too aggressive (pushy) or failing to lead the frame (passive).
+- *Red Flag Detector*: Identify risks such as "Fake Interest" (agreeing without detail) or "Authority Gap" (implies they need boss's approval).
+
+## 3. OSINT & Personalization (Crucial)
+- *Bio-Hooks: Analyze the **Client Profile (OSINT)* to find personal connections, relevant pointers to talk through/about to steer client conversation towards the goal.
+  - Timing: Use their location/job role to judge if now is a good time to call (e.g., "Don't call Academics during lecture hours").
+
+## 4. B.A.N.T. Tracker
+Extract the following from context (if available):
+- *Budget*: Unknown / Flexible / Specific Amount. (comparative analysis of client's possible income to the goal's pricing, suggest goal adjustment based on the analysis).
+- *Authority*: Gatekeeper / Influencer / Decision Maker.
+- *Need*: Specific pain points mentioned.
+- *Timeline*: Quarter / Immediate / Next Year.
+
+## 5. Actionable Strategy (The "Next Step")
+- *Draft Response*: Write a ready-to-send reply for the salesperson. It must use NLP suitable for the salesperson's current tone (mirroring).
+- *Closing Trigger*: If current_stage is "Closing", suggest asking for the Purchase Order (PO) immediately.
+
+# OUTPUT FORMAT
+You must output *ONLY* a valid JSON object matching the schema below. Do not include markdown formatting or explanations outside the JSON.
+
+```json
+{{
+  "meta": {{
+    "timestamp": "{datetime.utcnow().isoformat()}",
+    "confidence_score": 0.00  // Float 0.0 to 1.0 representing confidence in this advice
+  }},
+  "analysis": {{
+    "current_stage": "String (One of the defined stages)",
+    "client_mode": "String (Buying/Validation/Argumentative/Delaying)",
+    "competitor_detected": false or true // Boolean
+    "red_flags": ["String", "String"], // List of detected risks like 'Unclear Authority'
+    "salesperson_critique": "String (Advice to the agent on their tone/approach)"
+  }},
+  "tracker": {{
+    "trust_level": "String (Low/Medium/High)",
+    "pain_points_discovered": ["String", "String"],
+    "budget_clarity": "String (Low/Medium/High)",
+    "authority_status": "String (Gatekeeper/Influencer/Decision Maker)"
+  }},
+  "strategy": {{
+    "suggested_next_message": "String (The exact text the agent should send, dont make it too long)",
+    "suggested_question": "String (A follow-up question to deepen discovery and/or conversation sterring to wards goal)",
+    "personal_hook": "String (Context-aware hook based on OSINT/Bio)",
+    "timing_suggestion": "String (e.g., 'Send follow-up email tomorrow at 11:00 AM')"
+  }},
+  "objections": {{
+    "predicted_next": "String (The most likely objection to come next, e.g., 'Pricing') based on the cues already given by salesperson and conversation going.",
+    "probability": 0.00, // Float 0.0 to 1.0
+    "preemptive_tactic": "String (How to handle it before it arises)"
+  }}
+}}
+```
+"""
         
         response_text = await gemini_client_instance.generate_content(prompt)
         
+        print(f"--- Gemini raw response (first 500 chars): {response_text[:500]} ---")
+        
+        # Parse the JSON response
+        parsed_json = {}
+        try:
+            cleaned_text = response_text.strip()
+            if cleaned_text.startswith("```json"):
+                cleaned_text = cleaned_text[7:]
+            if cleaned_text.endswith("```"):
+                cleaned_text = cleaned_text[:-3]
+            cleaned_text = cleaned_text.strip()
+            parsed_json = json.loads(cleaned_text)
+            print(f"--- Gemini JSON parsed successfully. Keys: {list(parsed_json.keys())} ---")
+        except json.JSONDecodeError as e:
+            print(f"--- Gemini JSON parse error: {e} ---")
+            print(f"--- Cleaned text (first 500 chars): {cleaned_text[:500]} ---")
+            parsed_json = {"error": "Failed to parse JSON", "raw_response": response_text[:10000]}
+
         gemini_result = {
             "last_call_at": datetime.utcnow(),
             "payload_sent": gemini_payload,
-            "response": {"reply": response_text} # Store the response
+            "response": parsed_json, # Store the parsed JSON
+            "query_type": "user_query" if is_user_query else "strategic_review",  # Track the type
+            "user_query": task if is_user_query else None  # Store the original question
         }
 
         await sessions_collection.update_one(

@@ -13,6 +13,13 @@ const IntelligencePane: React.FC<Props> = ({ session }) => {
   const [sendingGemini, setSendingGemini] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('GeminiChatPane - geminiAnalysis:', geminiAnalysis);
+    console.log('GeminiChatPane - query_type:', geminiAnalysis?.query_type);
+    console.log('GeminiChatPane - response:', geminiAnalysis?.response);
+  }, [geminiAnalysis]);
+
   const localLlmLastAnalysisAt = localLlmAnalysis?.last_analysis_at
     ? new Date(localLlmAnalysis.last_analysis_at).toLocaleString()
     : 'N/A';
@@ -98,11 +105,86 @@ const IntelligencePane: React.FC<Props> = ({ session }) => {
                   <p style={{ color: '#dc2626' }}><strong>Error:</strong> {geminiAnalysis.error}</p>
                 ) : (
                   <>
-                    {geminiAnalysis.response?.reply ? (
+                    {geminiAnalysis.response ? (
                       <div style={{ background: '#1f2937', padding: '0.75rem', borderRadius: '0.5rem', marginTop: '0.5rem' }}>
-                        <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', color: '#e5e7eb' }}>
-                          {JSON.stringify(geminiAnalysis.response.reply, null, 2)}
-                        </pre>
+                        {/* Debug: Show raw response if nothing else renders */}
+                        {!geminiAnalysis.response.answer && !geminiAnalysis.response.analysis && (
+                          <div style={{ marginBottom: '1rem', background: '#7f1d1d', padding: '0.75rem', borderRadius: '0.5rem' }}>
+                            <h4 style={{ color: '#fca5a5', marginBottom: '0.5rem' }}>Debug: Raw Response</h4>
+                            <pre style={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                              {JSON.stringify(geminiAnalysis.response, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        
+                        {/* User Query Response */}
+                        {geminiAnalysis.response.answer && (
+                          <div style={{ marginBottom: '1rem', background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', borderLeft: '3px solid #818cf8' }}>
+                            {geminiAnalysis.user_query && (
+                              <h4 style={{ color: '#818cf8', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                                Q: {geminiAnalysis.user_query}
+                              </h4>
+                            )}
+                            <p style={{ marginBottom: '0.75rem', lineHeight: 1.6 }}>{geminiAnalysis.response.answer}</p>
+                            {geminiAnalysis.response.key_insights && geminiAnalysis.response.key_insights.length > 0 && (
+                              <div style={{ marginTop: '0.75rem' }}>
+                                <strong style={{ color: '#a5b4fc' }}>Key Insights:</strong>
+                                <ul style={{ marginTop: '0.25rem', marginLeft: '1.25rem', lineHeight: 1.6 }}>
+                                  {geminiAnalysis.response.key_insights.map((insight: string, idx: number) => (
+                                    <li key={idx}>{insight}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {geminiAnalysis.response.suggested_action && (
+                              <p style={{ marginTop: '0.75rem', color: '#10b981' }}>
+                                <strong>Action:</strong> {geminiAnalysis.response.suggested_action}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Strategic Review Response */}
+                        {geminiAnalysis.response.analysis && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <h4 style={{ color: '#818cf8', marginBottom: '0.5rem' }}>Analysis</h4>
+                            <p><strong>Stage:</strong> {geminiAnalysis.response.analysis.current_stage}</p>
+                            <p><strong>Client Mode:</strong> {geminiAnalysis.response.analysis.client_mode}</p>
+                            <p><strong>Critique:</strong> {geminiAnalysis.response.analysis.salesperson_critique}</p>
+                            {geminiAnalysis.response.analysis.red_flags?.length > 0 && (
+                              <p><strong>Red Flags:</strong> {geminiAnalysis.response.analysis.red_flags.join(', ')}</p>
+                            )}
+                          </div>
+                        )}
+                        {geminiAnalysis.response.strategy && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <h4 style={{ color: '#818cf8', marginBottom: '0.5rem' }}>Strategy</h4>
+                            <p><strong>Suggested Message:</strong> {geminiAnalysis.response.strategy.suggested_next_message}</p>
+                            <p><strong>Question:</strong> {geminiAnalysis.response.strategy.suggested_question}</p>
+                            {geminiAnalysis.response.strategy.personal_hook && (
+                              <p><strong>Personal Hook:</strong> {geminiAnalysis.response.strategy.personal_hook}</p>
+                            )}
+                          </div>
+                        )}
+                        {geminiAnalysis.response.tracker && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <h4 style={{ color: '#818cf8', marginBottom: '0.5rem' }}>Tracker (B.A.N.T.)</h4>
+                            <p><strong>Trust Level:</strong> {geminiAnalysis.response.tracker.trust_level}</p>
+                            <p><strong>Budget:</strong> {geminiAnalysis.response.tracker.budget_clarity}</p>
+                            <p><strong>Authority:</strong> {geminiAnalysis.response.tracker.authority_status}</p>
+                            {geminiAnalysis.response.tracker.pain_points_discovered?.length > 0 && (
+                              <p><strong>Pain Points:</strong> {geminiAnalysis.response.tracker.pain_points_discovered.join(', ')}</p>
+                            )}
+                          </div>
+                        )}
+                        {geminiAnalysis.response.objections && (
+                          <div>
+                            <h4 style={{ color: '#818cf8', marginBottom: '0.5rem' }}>Objections</h4>
+                            <p><strong>Predicted Next:</strong> {geminiAnalysis.response.objections.predicted_next}</p>
+                            <p><strong>Probability:</strong> {(geminiAnalysis.response.objections.probability * 100).toFixed(0)}%</p>
+                            <p><strong>Tactic:</strong> {geminiAnalysis.response.objections.preemptive_tactic}</p>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p style={{ color: '#6b7280' }}>No Gemini response available yet.</p>

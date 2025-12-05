@@ -11,9 +11,9 @@ async def test_orchestrator():
     
     # Sample test data
     test_data = {
-        "name": "Mehul Bansal",
-        "phone": "+918595139817",
-        "context_info": "Mehul Bansal is a college student persuing B.Tech from Jaypee Institute of Information Technology, Noida."
+        "name": "NAME",
+        "phone": "PHNO",
+        "context_info": "he is a college student persuing B.Tech from Jaypee Institute of Information Technology, Noida."
     }
     
     print("🧪 Testing Person OSINT Orchestrator")

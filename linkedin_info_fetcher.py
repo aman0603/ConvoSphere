@@ -5,6 +5,9 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class LinkedInProfileInfo:
     def __init__(self, api_token: str, dataset_id: str):

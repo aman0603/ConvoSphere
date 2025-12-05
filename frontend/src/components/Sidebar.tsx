@@ -96,23 +96,23 @@ const Sidebar: React.FC<Props> = ({ sessions, activeSessionId, onSelectSession, 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <label style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', color: '#9ca3af' }}>
               Client Name:
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none' }} />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
             </label>
             <label style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', color: '#9ca3af' }}>
               Client Phone:
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1234567890" style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none' }} />
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1234567890" style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
             </label>
             <label style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', color: '#9ca3af' }}>
               Context:
-              <textarea value={context} onChange={(e) => setContext(e.target.value)} rows={3} placeholder="Background, interests..." style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
+              <textarea value={context} onChange={(e) => setContext(e.target.value)} rows={3} placeholder="Background, interests..." style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
             </label>
             <label style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', color: '#9ca3af' }}>
               Goal:
-              <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g., Book a demo" style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none' }} />
+              <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2} placeholder="e.g., Book a demo" style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
             </label>
             <label style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', color: '#9ca3af' }}>
               Agent ID:
-              <input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none' }} />
+              <input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ width: '100%', padding: '0.65rem 0.75rem', borderRadius: 8, border: '1px solid #2a2f3d', background: '#0d1117', color: '#ffffff', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
             </label>
             <button type="submit" disabled={creating} style={{ marginTop: '0.5rem', padding: '0.7rem 1rem', borderRadius: 8, border: 'none', background: '#0ea5e9', color: '#ffffff', fontSize: '0.95rem', fontWeight: 600, cursor: creating ? 'not-allowed' : 'pointer', opacity: creating ? 0.7 : 1 }}>
               {creating ? 'Creating...' : 'Start Session'}

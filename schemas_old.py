@@ -33,34 +33,6 @@ class Message(BaseModel):
     text: str
     telegram_user_id: Optional[int] = None # Added for Telegram message routing
 
-class GeminiMeta(BaseModel):
-    timestamp: str
-    confidence_score: float
-
-class GeminiAnalysisData(BaseModel):
-    current_stage: str
-    client_mode: str
-    competitor_detected: bool
-    red_flags: List[str]
-    salesperson_critique: str
-
-class GeminiTracker(BaseModel):
-    trust_level: str
-    pain_points_discovered: List[str]
-    budget_clarity: str
-    authority_status: str
-
-class GeminiStrategy(BaseModel):
-    suggested_next_message: str
-    suggested_question: str
-    personal_hook: str
-    timing_suggestion: str
-
-class GeminiObjections(BaseModel):
-    predicted_next: str
-    probability: float
-    preemptive_tactic: str
-
 class LocalLLMAnalysis(BaseModel):
     last_analysis_at: Optional[datetime] = None
     global_summary: Optional[str] = None
@@ -71,11 +43,6 @@ class LocalLLMAnalysis(BaseModel):
 
 class GeminiAnalysis(BaseModel):
     last_call_at: Optional[datetime] = None
-    meta: Optional[GeminiMeta] = None
-    analysis: Optional[GeminiAnalysisData] = None
-    tracker: Optional[GeminiTracker] = None
-    strategy: Optional[GeminiStrategy] = None
-    objections: Optional[GeminiObjections] = None
     payload_sent: Optional[Dict[str, Any]] = None
     response: Optional[Dict[str, Any]] = None
     error: Optional[str] = None

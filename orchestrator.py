@@ -120,34 +120,10 @@ class PersonOSINTOrchestrator:
         self.person_info["enrichment_data"]["links_mentioned"] = parsed_info.get("links_mentioned", [])
         self.person_info["enrichment_data"]["usernames_mentioned"] = parsed_info.get("usernames_mentioned", {})
         self.person_info["enrichment_data"]["company_info"] = parsed_info.get("company_info", {})
-        # Add more context to search queries to improve accuracy
-        location = self.person_info["enrichment_data"].get("country", "")
-        phone_number = self.person_info["ground_truth"].get("phone", "")
-        
-        linkedin_query = parsed_info.get("google_search_query_to_get_linkedin_profile", f'site:linkedin.com "{name}" {location}')
-        if phone_number:
-            linkedin_query += f' OR "{phone_number}"'
-            
-        username_queries = parsed_info.get("google_search_to_get_usernames_links_queries", [f'"{name}" twitter', f'"{name}" github'])
-        contextualized_username_queries = []
-        for query in username_queries:
-            contextualized_query = f'{query} {location}'
-            if phone_number:
-                contextualized_query += f' OR "{phone_number}"'
-            contextualized_username_queries.append(contextualized_query)
-
-        company_query = parsed_info.get("google_search_query_to_get_company_profile", f'"{name}" company profile {location}')
-        if phone_number:
-            company_query += f' OR "{phone_number}"'
-            
-        generic_query = parsed_info.get("google_search_generic_query", f'"{name}" {location}')
-        if phone_number:
-            generic_query += f' OR "{phone_number}"'
-
-        self.person_info["enrichment_data"]["google_search_query_to_get_linkedin_profile"] = linkedin_query
-        self.person_info["enrichment_data"]["google_search_to_get_usernames_links_queries"] = contextualized_username_queries
-        self.person_info["enrichment_data"]["google_search_query_to_get_company_profile"] = company_query
-        self.person_info["enrichment_data"]["google_search_generic_query"] = generic_query
+        self.person_info["enrichment_data"]["google_search_query_to_get_linkedin_profile"] = parsed_info.get("google_search_query_to_get_linkedin_profile", f'"{name}" profile linkedin')
+        self.person_info["enrichment_data"]["google_search_to_get_usernames_links_queries"] = parsed_info.get("google_search_to_get_usernames_links_queries", [f'"{name}" twitter', f'"{name}" github'])
+        self.person_info["enrichment_data"]["google_search_query_to_get_company_profile"] = parsed_info.get("google_search_query_to_get_company_profile", f'"{name}" company profile')
+        self.person_info["enrichment_data"]["google_search_generic_query"] = parsed_info.get("google_search_generic_query", f'"{name}" profile')
         
         self.log_step(2, f"✅ Parsed info - Found {len(parsed_info.get('links_mentioned', []))} links, {len(parsed_info.get('usernames_mentioned', {}))} usernames")
     
@@ -312,8 +288,7 @@ class PersonOSINTOrchestrator:
             
             # Store successful parsing results
             for i, result in enumerate(parsed_results):
-                # Stricter check: require a relevance score of 0.7 or higher
-                if isinstance(result, dict) and result.get("relevance_score", 0.0) >= 0.7:
+                if isinstance(result, dict) and not result.get("not_target_person", True):
                     key = list(firecrawl_outputs.keys())[i]
                     self.person_info["enrichment_data"]["parsed_scraped_content"][key] = result
                     

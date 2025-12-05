@@ -5,9 +5,10 @@ import { sendMessage } from '../api';
 interface Props {
   sessionId: string | null;
   session: Session | null;
+  onShowOsint?: () => void;
 }
 
-const TelegramChatPane: React.FC<Props> = ({ sessionId, session }) => {
+const TelegramChatPane: React.FC<Props> = ({ sessionId, session, onShowOsint }) => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -57,7 +58,29 @@ const TelegramChatPane: React.FC<Props> = ({ sessionId, session }) => {
             <div style={{ fontSize: '0.8rem', color: '#22c55e' }}>● Online</div>
           </div>
         </div>
-        {/* Action buttons can be added here */}
+        {/* OSINT Profile Button */}
+        <button
+          onClick={onShowOsint}
+          style={{
+            padding: '0.5rem 1rem',
+            borderRadius: 8,
+            border: '1px solid #2a2f3d',
+            background: '#0ea5e9',
+            color: '#ffffff',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#0284c7'}
+          onMouseLeave={(e) => e.currentTarget.style.background = '#0ea5e9'}
+        >
+          <span style={{ fontSize: '1rem' }}>ℹ️</span>
+          OSINT Profile
+        </button>
       </div>
 
       {/* Messages Area */}

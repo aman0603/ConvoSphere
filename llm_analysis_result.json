@@ -1,7 +1,0 @@
-{
-  "global_summary": "Test User shows interest in Enterprise Plan and inquires about its cost.",
-  "latest_interaction_summary": "Customer asks the price of the Enterprise plan, indicating an intent to purchase if it fits their budget. This is a direct request for information which could lead towards negotiation or selling process depending on salesperson's response.",
-  "current_sentiment": "Curious",
-  "conversation_state_tag": "Needs_Discovery",
-  "last_analysis_at": "2025-11-24T04:14:13.916533"
-}

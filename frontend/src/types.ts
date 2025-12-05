@@ -14,6 +14,10 @@ export interface OSINT {
   serp?: Record<string, any>[];
   firecrawl?: Record<string, any>;
   confidence?: number;
+  status?: 'processing' | 'completed' | 'failed';
+  data?: Record<string, any>;  // Contains final_summary with person_profile, sales_intelligence, etc.
+  error?: string;
+  completed_at?: string;
 }
 
 export interface Message {
@@ -38,6 +42,9 @@ export interface GeminiAnalysis {
   last_call_at?: string; // ISO8601 string
   payload_sent?: Record<string, any>;
   response?: Record<string, any>;
+  query_type?: 'user_query' | 'strategic_review';
+  user_query?: string;
+  error?: string;
 }
 
 export interface Alert {
