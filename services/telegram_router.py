@@ -52,13 +52,19 @@ class TelegramRouter:
                 {"customer.telegram_user_id": sender_telegram_user_id},
             ]
             if hasattr(sender, 'phone') and sender.phone:
-                or_conditions.append({"customer.phone": f"+{sender.phone}"})
+                phone_str = str(sender.phone)
+                # Check for both formats: with and without '+' prefix
+                or_conditions.append({"customer.phone": phone_str})
+                if not phone_str.startswith('+'):
+                    or_conditions.append({"customer.phone": f"+{phone_str}"})
+                
             if hasattr(sender, 'username') and sender.username:
                 or_conditions.append({"customer.username": f"@{sender.username}"})
 
-            session_doc = await sessions_collection.find_one({
-                "$or": or_conditions
-            })
+            session_doc = await sessions_collection.find_one(
+                {"$or": or_conditions},
+                sort=[("updated_at", -1)]
+            )
 
             if session_doc:
                 session_id = session_doc["_id"]

@@ -100,23 +100,27 @@ class ToolWrappers:
         try:
             print(f"🔍 Running SerpAPI search: {query}")
             cmd = [sys.executable, os.path.join(self.base_path, "serpapi_tester.py"), query]
-            result = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            # Use asyncio.to_thread(subprocess.run) — works on Windows SelectorEventLoop
+            # (asyncio.create_subprocess_exec requires ProactorEventLoop which uvicorn doesn't use)
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=self.base_path
             )
-            stdout, stderr = await result.communicate()
-            
             if result.returncode == 0:
-                data = json.loads(stdout.decode())
+                data = json.loads(result.stdout.decode("utf-8", errors="replace"))
                 print(f"✅ SerpAPI completed successfully")
                 return {"success": True, "data": data}
             else:
-                print(f"❌ SerpAPI failed: {stderr.decode()}")
-                return {"success": False, "error": stderr.decode()}
+                err = result.stderr.decode("utf-8", errors="replace")
+                print(f"❌ SerpAPI failed: {err}")
+                return {"success": False, "error": err}
         except Exception as e:
-            print(f"❌ SerpAPI exception: {str(e)}")
+            print(f"❌ SerpAPI exception: {type(e).__name__}: {str(e)}")
             return {"success": False, "error": str(e)}
+
     
     async def run_firecrawl(self, url: str) -> Dict[str, Any]:
         """Scrape URL with Firecrawl"""

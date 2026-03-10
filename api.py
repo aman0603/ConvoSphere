@@ -606,6 +606,7 @@ async def add_message_to_session(
 async def send_outbound_message(
     session_id: str,
     send_request: SendMessageRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncIOMotorDatabase = Depends(get_mongo_client),
     sessions_collection: AsyncIOMotorCollection = Depends(get_sessions_collection)
 ):
@@ -660,6 +661,10 @@ async def send_outbound_message(
         updated_session_doc = await sessions_collection.find_one({"_id": session_id})
         if updated_session_doc:
             session_to_broadcast = Session.model_validate(updated_session_doc)
+            
+            # Enqueue Local LLM analysis as a background task for agent outbound messages
+            background_tasks.add_task(run_local_llm_analyze, session_to_broadcast.session_id, db, background_tasks)
+
             # Broadcast the updated session to the client
             await manager.send_session_update(session_id, session_to_broadcast.model_dump(mode='json'))
             return session_to_broadcast

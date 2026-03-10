@@ -15,7 +15,7 @@ class OllamaGenerativeModel:
         response = await self.client.chat(model=self.model_name, messages=[{'role': 'user', 'content': prompt}])
         return response['message']['content']
 
-llm_model_client = OllamaGenerativeModel(model_name="phi3:3.8b")
+llm_model_client = OllamaGenerativeModel(model_name="yasserrmd/GLM4.7-Distill-LFM2.5-1.2B:latest")
 
 
 class LocalLLMService:

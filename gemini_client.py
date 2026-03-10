@@ -1,31 +1,49 @@
 import os
+import re
 import json
 import asyncio
 from typing import Dict, List, Any, Optional
-from google import genai
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── NVIDIA client for all OSINT calls (no rate limits, ~0.3s latency) ──────
+_NVIDIA_API_KEY  = os.getenv("NVIDIA_API_KEY")
+_NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+_NVIDIA_MODEL    = os.getenv("NVIDIA_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1.5")
+
+_nvidia_client = AsyncOpenAI(base_url=_NVIDIA_BASE_URL, api_key=_NVIDIA_API_KEY)
+
+async def _nvidia_call(prompt: str, max_tokens: int = 4096) -> str:
+    """Call NVIDIA Nemotron API asynchronously. Strips <think>...</think> reasoning blocks."""
+    response = await _nvidia_client.chat.completions.create(
+        model=_NVIDIA_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        top_p=0.95,
+        max_tokens=max_tokens,
+        stream=False
+    )
+    text = response.choices[0].message.content or ""
+    # Strip <think>...</think> reasoning tokens emitted by this model
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    return text
+
 class GeminiClient:
-    """Client for Gemini API interactions"""
+    """Client for AI interactions (formerly Gemini, now using NVIDIA Nemotron)"""
     
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY not found in environment variables")
-        
-        # genai.configure(api_key=api_key)
-        self.client = genai.Client(api_key=api_key)
+        # We no longer need the Gemini API key since we're using NVIDIA exclusively
+        pass
 
     async def generate_content(self, prompt: str) -> str:
-        """Generic method to generate content from Gemini"""
+        """Generic method to generate content using NVIDIA Nemotron"""
         try:
-            print("🤖 Gemini: Generating content...")
-            response = await asyncio.to_thread(self.client.models.generate_content, model="gemini-2.5-flash", contents=prompt)
-            return response.text
+            print("🤖 NVIDIA (Strategic): Generating content...")
+            return await _nvidia_call(prompt)
         except Exception as e:
-            print(f"❌ Gemini generation error: {str(e)}")
+            print(f"❌ NVIDIA generation error: {str(e)}")
             return f"Error generating content: {str(e)}"
     
     async def parse_initial_info(self, name: str, phone: str, context_info: str, country_info: Dict) -> Dict[str, Any]:
@@ -74,11 +92,11 @@ OUTPUT ONLY VALID JSON in this format:
 """
         
         try:
-            print("🤖 Gemini: Parsing initial person information...")
-            response = await asyncio.to_thread(self.client.models.generate_content, model="gemini-2.5-flash", contents=prompt)
+            print("🤖 NVIDIA: Parsing initial person information...")
+            response_text = await _nvidia_call(prompt)
             
             # Extract JSON from response
-            response_text = response.text.strip()
+            response_text = response_text.strip()
             if response_text.startswith('```json'):
                 response_text = response_text[7:-3]
             elif response_text.startswith('```'):
@@ -136,10 +154,9 @@ OUTPUT ONLY a JSON array of exactly 5 URLs:
 """
         
         try:
-            print("🤖 Gemini: Filtering search results...")
-            response = await asyncio.to_thread(self.client.models.generate_content, model="gemini-2.5-flash", contents=prompt)
-            
-            response_text = response.text.strip()
+            print("🤖 NVIDIA: Filtering search results...")
+            response_text = await _nvidia_call(prompt)
+            response_text = response_text.strip()
             if response_text.startswith('```json'):
                 response_text = response_text[7:-3]
             elif response_text.startswith('```'):
@@ -238,10 +255,9 @@ OUTPUT JSON format:
 """
         
         try:
-            print("🤖 Gemini: Creating final verification and summary...")
-            response = await asyncio.to_thread(self.client.models.generate_content, model="gemini-2.5-flash", contents=prompt)
-            
-            response_text = response.text.strip()
+            print("🤖 NVIDIA: Creating final verification and summary...")
+            response_text = await _nvidia_call(prompt)
+            response_text = response_text.strip()
             if response_text.startswith('```json'):
                 response_text = response_text[7:-3]
             elif response_text.startswith('```'):
@@ -351,10 +367,9 @@ If the content is clearly not about the target person or contains no relevant in
 """
         
         try:
-            print(f"🤖 Gemini: Parsing scraped content from {scraped_url}")
-            response = await asyncio.to_thread(self.client.models.generate_content, model="gemini-2.5-flash", contents=prompt)
-            
-            response_text = response.text.strip()
+            print(f"🤖 NVIDIA: Parsing scraped content from {scraped_url}")
+            response_text = await _nvidia_call(prompt)
+            response_text = response_text.strip()
             if response_text.startswith('```json'):
                 response_text = response_text[7:-3]
             elif response_text.startswith('```'):

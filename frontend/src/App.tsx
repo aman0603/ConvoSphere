@@ -55,6 +55,13 @@ const App: React.FC = () => {
           has_response: !!updatedSession.gemini?.response
         });
         setActiveSession(updatedSession);
+        
+        // Also update the sessions list so the sidebar updates in real-time
+        setSessions((prevSessions) => 
+          prevSessions.map((s) => 
+            s.session_id === updatedSession.session_id ? updatedSession : s
+          )
+        );
       } catch (error) {
         console.error("Failed to parse WebSocket message:", error);
       }
